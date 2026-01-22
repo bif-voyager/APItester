@@ -54,7 +54,7 @@ export function parseCurl(curlCommand: string): Partial<Request> | null {
         }
 
         // Extract headers (-H or --header), handle both single and double quotes
-        const headerRegex = /(?:-H|--header)\s+(['"])([^\1]+?)\1/g;
+        const headerRegex = /(?:-H|--header)\s+(['"])([^'"]+)\1/g;
         let headerMatch;
         while ((headerMatch = headerRegex.exec(normalized)) !== null) {
             const headerContent = headerMatch[2];
