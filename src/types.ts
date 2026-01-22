@@ -1,6 +1,7 @@
 export interface KeyValue {
     key: string
     value: string
+    enabled?: boolean
 }
 
 export interface Request {

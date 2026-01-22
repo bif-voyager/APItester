@@ -66,6 +66,27 @@ function App() {
         setCurrentCollectionId(collectionId)
     }
 
+    const importRequest = (collectionId: string, requestData: Partial<Request>) => {
+        const newRequest: Request = {
+            id: crypto.randomUUID(),
+            name: requestData.name || requestData.url?.split('/').pop() || 'Imported Request',
+            method: requestData.method || 'GET',
+            url: requestData.url || '',
+            params: requestData.params || [],
+            headers: requestData.headers || [],
+            body: requestData.body || ''
+        }
+
+        updateCollections(collections.map(col =>
+            col.id === collectionId
+                ? { ...col, requests: [...col.requests, newRequest] }
+                : col
+        ))
+
+        setCurrentRequest(newRequest)
+        setCurrentCollectionId(collectionId)
+    }
+
     const deleteRequest = (collectionId: string, requestId: string) => {
         if (confirm('Delete this request?')) {
             updateCollections(collections.map(col =>
@@ -117,17 +138,21 @@ function App() {
         try {
             setResponse({ loading: true })
 
-            // Build URL with params
+            // Build URL with params (only enabled ones)
             const url = new URL(request.url)
-            request.params.forEach(param => {
-                if (param.key) url.searchParams.append(param.key, param.value)
-            })
+            request.params
+                .filter(param => param.enabled !== false && param.key)
+                .forEach(param => {
+                    url.searchParams.append(param.key, param.value)
+                })
 
-            // Build headers
+            // Build headers (only enabled ones)
             const headers: Record<string, string> = {}
-            request.headers.forEach(header => {
-                if (header.key) headers[header.key] = header.value
-            })
+            request.headers
+                .filter(header => header.enabled !== false && header.key)
+                .forEach(header => {
+                    headers[header.key] = header.value
+                })
 
             // Make request
             const startTime = performance.now()
@@ -188,6 +213,7 @@ function App() {
                     onDeleteCollection={deleteCollection}
                     onRenameCollection={renameCollection}
                     onAddRequest={addRequest}
+                    onImportRequest={importRequest}
                     onDeleteRequest={deleteRequest}
                     onRenameRequest={renameRequest}
                     onSelectRequest={selectRequest}

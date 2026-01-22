@@ -1,5 +1,6 @@
 import { Collection, Request } from '../types'
 import { useState } from 'react'
+import { parseCurl } from '../utils/curlParser'
 
 interface SidebarProps {
     collections: Collection[]
@@ -8,6 +9,7 @@ interface SidebarProps {
     onDeleteCollection: (collectionId: string) => void
     onRenameCollection: (collectionId: string, newName: string) => void
     onAddRequest: (collectionId: string) => void
+    onImportRequest: (collectionId: string, requestData: Partial<Request>) => void
     onDeleteRequest: (collectionId: string, requestId: string) => void
     onRenameRequest: (collectionId: string, requestId: string, newName: string) => void
     onSelectRequest: (request: Request, collectionId: string) => void
@@ -20,6 +22,7 @@ export default function Sidebar({
     onDeleteCollection,
     onRenameCollection,
     onAddRequest,
+    onImportRequest,
     onDeleteRequest,
     onRenameRequest,
     onSelectRequest
@@ -27,6 +30,9 @@ export default function Sidebar({
     const [editingCollection, setEditingCollection] = useState<string | null>(null)
     const [editingRequest, setEditingRequest] = useState<string | null>(null)
     const [editName, setEditName] = useState('')
+    const [showImportModal, setShowImportModal] = useState(false)
+    const [curlInput, setCurlInput] = useState('')
+    const [selectedCollectionId, setSelectedCollectionId] = useState<string>('')
 
     const handleAddCollection = () => {
         const name = prompt('Collection name:')
@@ -70,17 +76,30 @@ export default function Sidebar({
     return (
         <div className="w-72 bg-bg-secondary border-r border-gray-700 flex flex-col h-full">
             {/* Header */}
-            <div className="p-4 border-b border-gray-700 flex items-center justify-between">
-                <h2 className="text-lg font-bold">Collections</h2>
-                <button
-                    onClick={handleAddCollection}
-                    className="p-2 hover:bg-accent-primary/20 rounded border border-accent-primary/50 transition-all duration-200 hover:border-accent-primary group"
-                    title="New Collection"
-                >
-                    <svg className="w-4 h-4 text-accent-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                    </svg>
-                </button>
+            <div className="p-4 border-b border-gray-700">
+                <div className="flex items-center justify-between mb-3">
+                    <h2 className="text-lg font-bold">Collections</h2>
+                </div>
+                <div className="flex gap-2">
+                    <button
+                        onClick={handleAddCollection}
+                        className="flex-1 px-3 py-2 hover:bg-accent-primary/20 rounded border border-accent-primary/50 transition-all duration-200 hover:border-accent-primary text-sm font-medium text-accent-primary"
+                        title="New Collection"
+                    >
+                        + New
+                    </button>
+                    <button
+                        onClick={() => {
+                            setShowImportModal(true)
+                            setCurlInput('')
+                            setSelectedCollectionId(collections[0]?.id || '')
+                        }}
+                        className="flex-1 px-3 py-2 hover:bg-accent-secondary/20 rounded border border-accent-secondary/50 transition-all duration-200 hover:border-accent-secondary text-sm font-medium text-accent-secondary"
+                        title="Import from cURL"
+                    >
+                        📥 Import
+                    </button>
+                </div>
             </div>
 
             {/* Collections List */}
@@ -153,8 +172,8 @@ export default function Sidebar({
                                     <div
                                         key={request.id}
                                         className={`flex items-center gap-2 p-2 rounded transition-all duration-150 group ${currentRequestId === request.id
-                                                ? 'bg-accent-secondary/20 border border-accent-secondary/40'
-                                                : 'hover:bg-bg-tertiary/50 border border-transparent'
+                                            ? 'bg-accent-secondary/20 border border-accent-secondary/40'
+                                            : 'hover:bg-bg-tertiary/50 border border-transparent'
                                             }`}
                                     >
                                         <button
@@ -236,6 +255,80 @@ export default function Sidebar({
                     ))
                 )}
             </div>
+
+            {/* Import Modal */}
+            {showImportModal && (
+                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setShowImportModal(false)}>
+                    <div className="bg-bg-secondary border border-gray-700 rounded-lg p-6 w-[600px] max-w-[90vw]" onClick={(e) => e.stopPropagation()}>
+                        <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+                            <span>📥</span> Import from cURL
+                        </h3>
+
+                        <div className="mb-4">
+                            <label className="block text-sm font-medium text-text-secondary mb-2">
+                                Target Collection
+                            </label>
+                            <select
+                                value={selectedCollectionId}
+                                onChange={(e) => setSelectedCollectionId(e.target.value)}
+                                className="w-full px-3 py-2 bg-bg-tertiary border border-gray-700 rounded focus:outline-none focus:ring-2 focus:ring-accent-secondary"
+                            >
+                                {collections.length === 0 && (
+                                    <option value="">No collections available</option>
+                                )}
+                                {collections.map((col) => (
+                                    <option key={col.id} value={col.id}>{col.name}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <div className="mb-4">
+                            <label className="block text-sm font-medium text-text-secondary mb-2">
+                                Paste cURL Command
+                            </label>
+                            <textarea
+                                value={curlInput}
+                                onChange={(e) => setCurlInput(e.target.value)}
+                                placeholder={`curl -X POST https://api.example.com/users \\
+  -H "Content-Type: application/json" \\
+  -d '{"name": "John"}'`}
+                                className="w-full h-40 px-3 py-2 bg-bg-tertiary border border-gray-700 rounded font-mono text-sm focus:outline-none focus:ring-2 focus:ring-accent-secondary resize-none"
+                            />
+                        </div>
+
+                        <div className="flex gap-3 justify-end">
+                            <button
+                                onClick={() => setShowImportModal(false)}
+                                className="px-4 py-2 border border-text-tertiary/30 rounded hover:bg-bg-tertiary transition-all"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={() => {
+                                    if (!selectedCollectionId) {
+                                        alert('Please select a collection first')
+                                        return
+                                    }
+
+                                    const parsed = parseCurl(curlInput)
+                                    if (parsed && parsed.url) {
+                                        // Import request with all parsed data
+                                        onImportRequest(selectedCollectionId, parsed)
+                                        setShowImportModal(false)
+                                        setCurlInput('')
+                                    } else {
+                                        alert('Failed to parse cURL command. Please check the format.')
+                                    }
+                                }}
+                                className="px-4 py-2 bg-accent-primary hover:bg-accent-primary/80 text-white rounded transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                                disabled={!curlInput.trim() || !selectedCollectionId || collections.length === 0}
+                            >
+                                Import
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }

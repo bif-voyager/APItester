@@ -13,6 +13,14 @@ export default function RequestEditor({
     onUpdateRequest
 }: RequestEditorProps) {
     const [activeTab, setActiveTab] = useState('params')
+    const [openDropdown, setOpenDropdown] = useState<number | null>(null)
+
+    const commonHeaders = [
+        'Accept', 'Accept-Charset', 'Accept-Encoding', 'Accept-Language',
+        'Authorization', 'Cache-Control', 'Content-Type', 'Content-Length',
+        'Content-Encoding', 'Cookie', 'Host', 'Origin', 'Referer',
+        'User-Agent', 'X-Requested-With', 'X-API-Key', 'X-Auth-Token'
+    ]
 
     if (!request) {
         return (
@@ -32,7 +40,7 @@ export default function RequestEditor({
     }
 
     const addRow = (field: 'params' | 'headers') => {
-        const newRow: KeyValue = { key: '', value: '' }
+        const newRow: KeyValue = { key: '', value: '', enabled: true }
         updateRequest({
             [field]: [...request[field], newRow]
         })
@@ -97,8 +105,8 @@ export default function RequestEditor({
                         key={tab.id}
                         onClick={() => setActiveTab(tab.id)}
                         className={`pb-2 font-medium text-sm border-b-2 transition-colors ${activeTab === tab.id
-                                ? 'border-accent-secondary text-text-primary'
-                                : 'border-transparent text-text-secondary hover:text-text-primary'
+                            ? 'border-accent-secondary text-text-primary'
+                            : 'border-transparent text-text-secondary hover:text-text-primary'
                             }`}
                     >
                         {tab.label}
@@ -112,20 +120,28 @@ export default function RequestEditor({
                     <div className="space-y-2">
                         <p className="text-sm font-medium mb-3">Query Parameters</p>
                         {request.params.map((param, index) => (
-                            <div key={index} className="flex gap-2">
+                            <div key={index} className="flex gap-2 items-center">
+                                <input
+                                    type="checkbox"
+                                    checked={param.enabled !== false}
+                                    onChange={(e) => updateRow('params', index, { enabled: e.target.checked })}
+                                    className="w-4 h-4 rounded border-gray-600 bg-bg-primary text-accent-primary focus:ring-accent-primary focus:ring-offset-0 focus:ring-2 cursor-pointer"
+                                />
                                 <input
                                     type="text"
                                     value={param.key}
                                     onChange={(e) => updateRow('params', index, { key: e.target.value })}
                                     placeholder="Key"
-                                    className="flex-1 px-3 py-2 bg-bg-primary border border-gray-600 rounded focus:outline-none focus:border-accent-secondary text-sm"
+                                    className={`flex-1 px-3 py-2 bg-bg-primary border border-gray-600 rounded focus:outline-none focus:border-accent-secondary text-sm ${param.enabled === false ? 'opacity-50' : ''}`}
+                                    disabled={param.enabled === false}
                                 />
                                 <input
                                     type="text"
                                     value={param.value}
                                     onChange={(e) => updateRow('params', index, { value: e.target.value })}
                                     placeholder="Value"
-                                    className="flex-[2] px-3 py-2 bg-bg-primary border border-gray-600 rounded focus:outline-none focus:border-accent-secondary text-sm"
+                                    className={`flex-[2] px-3 py-2 bg-bg-primary border border-gray-600 rounded focus:outline-none focus:border-accent-secondary text-sm ${param.enabled === false ? 'opacity-50' : ''}`}
+                                    disabled={param.enabled === false}
                                 />
                                 <button
                                     onClick={() => deleteRow('params', index)}
@@ -153,20 +169,68 @@ export default function RequestEditor({
                     <div className="space-y-2">
                         <p className="text-sm font-medium mb-3">Headers</p>
                         {request.headers.map((header, index) => (
-                            <div key={index} className="flex gap-2">
+                            <div key={index} className="flex gap-2 items-center">
                                 <input
-                                    type="text"
-                                    value={header.key}
-                                    onChange={(e) => updateRow('headers', index, { key: e.target.value })}
-                                    placeholder="Header"
-                                    className="flex-1 px-3 py-2 bg-bg-primary border border-gray-600 rounded focus:outline-none focus:border-accent-secondary text-sm"
+                                    type="checkbox"
+                                    checked={header.enabled !== false}
+                                    onChange={(e) => updateRow('headers', index, { enabled: e.target.checked })}
+                                    className="w-4 h-4 rounded border-gray-600 bg-bg-primary text-accent-primary focus:ring-accent-primary focus:ring-offset-0 focus:ring-2 cursor-pointer"
                                 />
+
+                                {/* Custom dropdown for header name */}
+                                <div className="flex-1 relative">
+                                    <div className="flex">
+                                        <input
+                                            type="text"
+                                            value={header.key}
+                                            onChange={(e) => updateRow('headers', index, { key: e.target.value })}
+                                            onFocus={() => setOpenDropdown(index)}
+                                            onBlur={() => setTimeout(() => setOpenDropdown(null), 200)}
+                                            placeholder="Header name"
+                                            className={`flex-1 px-3 py-2 bg-bg-primary border border-gray-600 rounded-l focus:outline-none focus:border-accent-secondary text-sm ${header.enabled === false ? 'opacity-50' : ''}`}
+                                            disabled={header.enabled === false}
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => setOpenDropdown(openDropdown === index ? null : index)}
+                                            className={`px-2 bg-bg-primary border-y border-r border-gray-600 rounded-r hover:bg-bg-tertiary ${header.enabled === false ? 'opacity-50' : ''}`}
+                                            disabled={header.enabled === false}
+                                        >
+                                            <svg className="w-4 h-4 text-text-tertiary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                            </svg>
+                                        </button>
+                                    </div>
+
+                                    {/* Dropdown menu */}
+                                    {openDropdown === index && (
+                                        <div className="absolute z-10 w-full mt-1 bg-bg-secondary border border-gray-600 rounded shadow-lg max-h-48 overflow-y-auto">
+                                            {commonHeaders
+                                                .filter(h => h.toLowerCase().includes(header.key.toLowerCase()))
+                                                .map((headerName) => (
+                                                    <button
+                                                        key={headerName}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            updateRow('headers', index, { key: headerName })
+                                                            setOpenDropdown(null)
+                                                        }}
+                                                        className="w-full text-left px-3 py-2 hover:bg-bg-tertiary text-sm transition-colors"
+                                                    >
+                                                        {headerName}
+                                                    </button>
+                                                ))}
+                                        </div>
+                                    )}
+                                </div>
+
                                 <input
                                     type="text"
                                     value={header.value}
                                     onChange={(e) => updateRow('headers', index, { value: e.target.value })}
                                     placeholder="Value"
-                                    className="flex-[2] px-3 py-2 bg-bg-primary border border-gray-600 rounded focus:outline-none focus:border-accent-secondary text-sm"
+                                    className={`flex-[2] px-3 py-2 bg-bg-primary border border-gray-600 rounded focus:outline-none focus:border-accent-secondary text-sm ${header.enabled === false ? 'opacity-50' : ''}`}
+                                    disabled={header.enabled === false}
                                 />
                                 <button
                                     onClick={() => deleteRow('headers', index)}
@@ -178,6 +242,7 @@ export default function RequestEditor({
                                 </button>
                             </div>
                         ))}
+
                         <button
                             onClick={() => addRow('headers')}
                             className="text-sm text-accent-secondary hover:text-accent-primary flex items-center gap-1 mt-2"
