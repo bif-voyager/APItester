@@ -1,4 +1,5 @@
 import { Response } from '../types'
+import JsonViewer from './JsonViewer'
 
 interface ResponseViewerProps {
     response: Response | null
@@ -73,10 +74,8 @@ export default function ResponseViewer({ response }: ResponseViewerProps) {
 
             {/* Response Body */}
             <div className="flex-1 bg-bg-tertiary border border-gray-700 rounded overflow-hidden">
-                <div className="h-full overflow-auto">
-                    <pre className="p-4 text-sm font-mono text-text-primary whitespace-pre-wrap">
-                        {formatJson(response.body)}
-                    </pre>
+                <div className="h-full overflow-auto p-4">
+                    <JsonViewer json={formatJson(response.body)} />
                 </div>
             </div>
         </div>
