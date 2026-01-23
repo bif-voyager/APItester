@@ -97,8 +97,7 @@ export function addRequestToTree(
                 children: [...item.children, requestItem],
                 isExpanded: true, // Auto-expand when adding
             };
-        }
-        if (item.type === 'folder') {
+        } else if (item.type === 'folder') {
             return {
                 ...item,
                 children: addRequestToTree(item.children, parentId, request),
@@ -112,10 +111,11 @@ export function addRequestToTree(
 export function addFolderToTree(
     items: CollectionItem[],
     parentId: string | null,
-    folderName: string
+    folderName: string,
+    folderId?: string
 ): CollectionItem[] {
     const folderItem: CollectionItem = {
-        id: generateId(),
+        id: folderId || generateId(),
         name: folderName,
         type: 'folder',
         children: [],
@@ -137,7 +137,7 @@ export function addFolderToTree(
         if (item.type === 'folder') {
             return {
                 ...item,
-                children: addFolderToTree(item.children, parentId, folderName),
+                children: addFolderToTree(item.children, parentId, folderName, folderId),
             };
         }
         return item;
@@ -174,4 +174,87 @@ export function findRequestInTree(
         }
     }
     return null;
+}
+
+// Move item in tree
+export function moveItemInTree(
+    items: CollectionItem[],
+    sourceId: string,
+    targetId: string | null
+): CollectionItem[] {
+    // 1. Find the item components
+    const itemToMove = findItemInTree(items, sourceId);
+    if (!itemToMove) return items;
+
+    // 2. Remove from old location
+    const itemsWithoutSource = deleteItemFromTree(items, sourceId);
+
+    // 3. Add to new location
+    if (!targetId) {
+        // Move to root
+        return [...itemsWithoutSource, itemToMove];
+    }
+
+    // Check target type to decide between "Nest" (folder) or "Reorder" (sibling)
+    const targetItem = findItemInTree(itemsWithoutSource, targetId);
+    if (!targetItem) return itemsWithoutSource; // Target lost?
+
+    if (targetItem.type === 'folder') {
+        // Move INSIDE the folder
+        return addExistingItemToTree(itemsWithoutSource, targetId, itemToMove);
+    } else {
+        // Move BEFORE the sibling (Request or other)
+        return insertItemBeforeSibling(itemsWithoutSource, targetId, itemToMove);
+    }
+}
+
+
+// Helper to add existing item to specific parent (Nesting)
+function addExistingItemToTree(
+    items: CollectionItem[],
+    parentId: string,
+    itemToAdd: CollectionItem
+): CollectionItem[] {
+    return items.map((item) => {
+        if (item.id === parentId && item.type === 'folder') {
+            return {
+                ...item,
+                children: [...item.children, itemToAdd],
+                isExpanded: true,
+            };
+        }
+        if (item.type === 'folder') {
+            return {
+                ...item,
+                children: addExistingItemToTree(item.children, parentId, itemToAdd),
+            };
+        }
+        return item;
+    });
+}
+
+// Helper to insert item before a sibling (Reordering)
+function insertItemBeforeSibling(
+    items: CollectionItem[],
+    siblingId: string,
+    itemToAdd: CollectionItem
+): CollectionItem[] {
+    // Check if sibling is in this list
+    const siblingIndex = items.findIndex((item) => item.id === siblingId);
+    if (siblingIndex !== -1) {
+        const newItems = [...items];
+        newItems.splice(siblingIndex, 0, itemToAdd);
+        return newItems;
+    }
+
+    // Recurse into folders
+    return items.map((item) => {
+        if (item.type === 'folder') {
+            return {
+                ...item,
+                children: insertItemBeforeSibling(item.children, siblingId, itemToAdd),
+            };
+        }
+        return item;
+    });
 }

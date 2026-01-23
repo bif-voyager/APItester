@@ -10,6 +10,7 @@ import {
     deleteItemFromTree,
     renameItemInTree,
     toggleExpandInTree,
+    moveItemInTree,
 } from './utils/collectionTreeHelpers'
 
 function App() {
@@ -147,16 +148,32 @@ function App() {
         setCurrentCollectionId(collectionId)
     }
 
-    const addFolder = (collectionId: string, parentId: string | null) => {
-        const name = prompt('Folder name:')
-        if (!name?.trim()) return
+    const addFolder = (collectionId: string, parentId: string | null): string | null => {
+        const folderId = generateId()
+        const defaultName = 'New Folder'
 
         setCollections(
             collections.map((col) => {
                 if (col.id === collectionId) {
                     return {
                         ...col,
-                        items: addFolderToTree(col.items, parentId, name.trim()),
+                        items: addFolderToTree(col.items, parentId, defaultName, folderId),
+                    }
+                }
+                return col
+            })
+        )
+
+        return folderId
+    }
+
+    const moveItem = (collectionId: string, sourceItemId: string, targetItemId: string | null) => {
+        setCollections(
+            collections.map((col) => {
+                if (col.id === collectionId) {
+                    return {
+                        ...col,
+                        items: moveItemInTree(col.items, sourceItemId, targetItemId),
                     }
                 }
                 return col
@@ -334,6 +351,7 @@ function App() {
                     onAddRequest={addRequestToCollection}
                     onImportRequest={importRequest}
                     onAddFolder={addFolder}
+                    onMoveItem={moveItem}
                     onDeleteItem={deleteItem}
                     onRenameItem={renameItem}
                     onToggleItemExpand={toggleItemExpand}

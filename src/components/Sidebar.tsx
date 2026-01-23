@@ -13,7 +13,8 @@ interface SidebarProps {
     onToggleCollectionExpand: (collectionId: string) => void
     onAddRequest: (collectionId: string, parentId?: string) => void
     onImportRequest: (collectionId: string, requestData: Partial<Request>) => void
-    onAddFolder: (collectionId: string, parentId: string | null) => void
+    onAddFolder: (collectionId: string, parentId: string | null) => string | null
+    onMoveItem: (collectionId: string, sourceItemId: string, targetItemId: string | null) => void
     onDeleteItem: (collectionId: string, itemId: string) => void
     onRenameItem: (collectionId: string, itemId: string, newName: string) => void
     onToggleItemExpand: (collectionId: string, itemId: string) => void
@@ -34,10 +35,14 @@ export default function Sidebar({
     onRenameItem,
     onToggleItemExpand,
     onSelectRequest,
+    onMoveItem,
 }: SidebarProps) {
     const [editingCollection, setEditingCollection] = useState<string | null>(null)
     const [editName, setEditName] = useState('')
+    const [editingItemId, setEditingItemId] = useState<string | null>(null)
     const [showImportModal, setShowImportModal] = useState(false)
+    const [showNewCollectionModal, setShowNewCollectionModal] = useState(false)
+    const [newCollectionName, setNewCollectionName] = useState('')
     const [curlInput, setCurlInput] = useState('')
     const [selectedCollectionId, setSelectedCollectionId] = useState<string>('')
     const [collectionContextMenu, setCollectionContextMenu] = useState<{
@@ -47,8 +52,16 @@ export default function Sidebar({
     } | null>(null)
 
     const handleAddCollection = () => {
-        const name = prompt('Collection name:')
-        if (name?.trim()) onAddCollection(name.trim())
+        setNewCollectionName('')
+        setShowNewCollectionModal(true)
+    }
+
+    const createCollection = () => {
+        if (newCollectionName.trim()) {
+            onAddCollection(newCollectionName.trim())
+            setShowNewCollectionModal(false)
+            setNewCollectionName('')
+        }
     }
 
     const startEditCollection = (id: string, currentName: string) => {
@@ -196,12 +209,19 @@ export default function Sidebar({
                                             collectionId={collection.id}
                                             level={0}
                                             currentRequestId={currentRequestId || undefined}
-                                            onSelectRequest={(req) => onSelectRequest(req, item.id, collection.id)}
+                                            editingItemId={editingItemId}
+                                            onMoveItem={onMoveItem}
+                                            onStartEdit={(itemId) => setEditingItemId(itemId)}
+                                            onStopEdit={() => setEditingItemId(null)}
+                                            onSelectRequest={(req, reqId) => onSelectRequest(req, reqId, collection.id)}
                                             onToggleExpand={(itemId) => onToggleItemExpand(collection.id, itemId)}
                                             onRename={(itemId, newName) => onRenameItem(collection.id, itemId, newName)}
                                             onDelete={(itemId) => onDeleteItem(collection.id, itemId)}
                                             onAddRequest={(parentId) => onAddRequest(collection.id, parentId)}
-                                            onAddFolder={(parentId) => onAddFolder(collection.id, parentId)}
+                                            onAddFolder={(parentId) => {
+                                                const folderId = onAddFolder(collection.id, parentId)
+                                                if (folderId) setEditingItemId(folderId)
+                                            }}
                                         />
                                     ))}
                                 </div>
@@ -233,7 +253,8 @@ export default function Sidebar({
                         setCollectionContextMenu(null)
                     }}
                     onAddFolder={() => {
-                        onAddFolder(collectionContextMenu.collectionId, null)
+                        const folderId = onAddFolder(collectionContextMenu.collectionId, null)
+                        if (folderId) setEditingItemId(folderId)
                         setCollectionContextMenu(null)
                     }}
                 />
@@ -304,6 +325,54 @@ export default function Sidebar({
                                 disabled={!curlInput.trim() || !selectedCollectionId || collections.length === 0}
                             >
                                 Import
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* New Collection Modal */}
+            {showNewCollectionModal && (
+                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setShowNewCollectionModal(false)}>
+                    <div className="bg-bg-secondary border border-gray-700 rounded-lg p-6 w-[500px] max-w-[90vw]" onClick={(e) => e.stopPropagation()}>
+                        <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+                            <svg className="w-6 h-6 text-accent-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                            </svg>
+                            Create New Collection
+                        </h3>
+
+                        <div className="mb-6">
+                            <label className="block text-sm font-medium text-text-secondary mb-2">
+                                Collection Name
+                            </label>
+                            <input
+                                type="text"
+                                value={newCollectionName}
+                                onChange={(e) => setNewCollectionName(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') createCollection()
+                                    if (e.key === 'Escape') setShowNewCollectionModal(false)
+                                }}
+                                placeholder="My API Collection"
+                                className="w-full px-3 py-2 bg-bg-tertiary border border-gray-700 rounded text-sm focus:outline-none focus:ring-2 focus:ring-accent-primary"
+                                autoFocus
+                            />
+                        </div>
+
+                        <div className="flex gap-3 justify-end">
+                            <button
+                                onClick={() => setShowNewCollectionModal(false)}
+                                className="px-4 py-2 border border-text-tertiary/30 rounded hover:bg-bg-tertiary transition-all"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={createCollection}
+                                disabled={!newCollectionName.trim()}
+                                className="px-4 py-2 bg-accent-primary hover:bg-accent-primary/80 text-white rounded transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                Create
                             </button>
                         </div>
                     </div>

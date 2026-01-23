@@ -7,12 +7,16 @@ interface CollectionTreeItemProps {
     collectionId: string;
     level: number;
     currentRequestId?: string;
-    onSelectRequest: (request: Request, collectionId: string) => void;
+    editingItemId?: string | null;
+    onStartEdit?: (itemId: string) => void;
+    onStopEdit?: () => void;
+    onSelectRequest: (request: Request, requestId: string, collectionId: string) => void;
     onToggleExpand: (itemId: string) => void;
     onRename: (itemId: string, newName: string) => void;
     onDelete: (itemId: string) => void;
     onAddRequest: (parentId: string) => void;
     onAddFolder: (parentId: string) => void;
+    onMoveItem: (collectionId: string, sourceItemId: string, targetItemId: string | null) => void;
 }
 
 export default function CollectionTreeItem({
@@ -20,24 +24,30 @@ export default function CollectionTreeItem({
     collectionId,
     level,
     currentRequestId,
+    editingItemId,
+    onStartEdit,
+    onStopEdit,
     onSelectRequest,
     onToggleExpand,
     onRename,
     onDelete,
     onAddRequest,
     onAddFolder,
+    onMoveItem,
 }: CollectionTreeItemProps) {
-    const [isEditing, setIsEditing] = useState(false);
     const [editName, setEditName] = useState(item.name);
     const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
 
     const indent = level * 16;
 
+    // Use controlled editing from props or fallback to internal
+    const isEditing = editingItemId === item.id;
+
     const handleSaveRename = () => {
         if (editName.trim() && editName !== item.name) {
             onRename(item.id, editName.trim());
         }
-        setIsEditing(false);
+        if (onStopEdit) onStopEdit();
     };
 
     const getMethodColor = (method: string) => {
@@ -51,13 +61,60 @@ export default function CollectionTreeItem({
         return colors[method] || 'bg-gray-500';
     };
 
+    const [isDragOver, setIsDragOver] = useState(false);
+
+    const handleDragStart = (e: React.DragEvent) => {
+        e.dataTransfer.setData('sourceId', item.id);
+        e.dataTransfer.setData('collectionId', collectionId);
+        e.dataTransfer.effectAllowed = 'move';
+        e.stopPropagation();
+    };
+
+    const handleDragOver = (e: React.DragEvent) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        if (!isDragOver) setIsDragOver(true);
+    };
+
+    const handleDragLeave = () => {
+        setIsDragOver(false);
+    };
+
+    const handleDrop = (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragOver(false);
+
+        const sourceId = e.dataTransfer.getData('sourceId');
+        const sourceColId = e.dataTransfer.getData('collectionId');
+
+        if (sourceColId === collectionId && sourceId !== item.id) {
+            onMoveItem(collectionId, sourceId, item.id);
+        }
+    };
+
     if (item.type === 'folder') {
         return (
             <>
                 <div
-                    className="flex items-center gap-1 p-2 rounded hover:bg-bg-tertiary/50 group relative"
+                    className={`flex items-center gap-1 p-2 rounded group relative transition-colors ${isDragOver ? 'bg-accent-primary/20 border-2 border-accent-primary' : 'hover:bg-bg-tertiary/50 border-2 border-transparent'
+                        }`}
                     style={{ paddingLeft: `${indent + 8}px` }}
+                    draggable={!isEditing}
+                    onDragStart={handleDragStart}
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
                 >
+                    {/* Indent guide lines */}
+                    {level > 0 && Array.from({ length: level }).map((_, idx) => (
+                        <div
+                            key={idx}
+                            className="absolute top-0 bottom-0 w-px bg-gray-700/40"
+                            style={{ left: `${idx * 16 + 8}px` }}
+                        />
+                    ))}
+
                     {/* Expand/Collapse Arrow */}
                     <button
                         onClick={() => onToggleExpand(item.id)}
@@ -93,7 +150,7 @@ export default function CollectionTreeItem({
                                 if (e.key === 'Enter') handleSaveRename();
                                 if (e.key === 'Escape') {
                                     setEditName(item.name);
-                                    setIsEditing(false);
+                                    if (onStopEdit) onStopEdit();
                                 }
                             }}
                             className="flex-1 px-2 py-1 bg-bg-tertiary border border-accent-secondary rounded text-sm focus:outline-none"
@@ -103,7 +160,7 @@ export default function CollectionTreeItem({
                     ) : (
                         <span
                             className="text-sm flex-1 cursor-pointer"
-                            onDoubleClick={() => setIsEditing(true)}
+                            onDoubleClick={() => onStartEdit && onStartEdit(item.id)}
                         >
                             {item.name}
                         </span>
@@ -126,21 +183,32 @@ export default function CollectionTreeItem({
                 {/* Children */}
                 {item.isExpanded && item.children && (
                     <div>
-                        {item.children.map((child) => (
-                            <CollectionTreeItem
-                                key={child.id}
-                                item={child}
-                                collectionId={collectionId}
-                                level={level + 1}
-                                currentRequestId={currentRequestId}
-                                onSelectRequest={onSelectRequest}
-                                onToggleExpand={onToggleExpand}
-                                onRename={onRename}
-                                onDelete={onDelete}
-                                onAddRequest={onAddRequest}
-                                onAddFolder={onAddFolder}
-                            />
-                        ))}
+                        {[...item.children]
+                            .sort((a, b) => {
+                                // Requests first, then folders
+                                if (a.type === 'request' && b.type === 'folder') return -1;
+                                if (a.type === 'folder' && b.type === 'request') return 1;
+                                return 0;
+                            })
+                            .map((child) => (
+                                <CollectionTreeItem
+                                    key={child.id}
+                                    item={child}
+                                    collectionId={collectionId}
+                                    level={level + 1}
+                                    currentRequestId={currentRequestId}
+                                    editingItemId={editingItemId}
+                                    onStartEdit={onStartEdit}
+                                    onStopEdit={onStopEdit}
+                                    onSelectRequest={onSelectRequest}
+                                    onToggleExpand={onToggleExpand}
+                                    onRename={onRename}
+                                    onDelete={onDelete}
+                                    onAddRequest={onAddRequest}
+                                    onAddFolder={onAddFolder}
+                                    onMoveItem={onMoveItem}
+                                />
+                            ))}
                     </div>
                 )}
 
@@ -150,7 +218,10 @@ export default function CollectionTreeItem({
                         x={contextMenu.x}
                         y={contextMenu.y}
                         onClose={() => setContextMenu(null)}
-                        onRename={() => setIsEditing(true)}
+                        onRename={() => {
+                            if (onStartEdit) onStartEdit(item.id);
+                            setContextMenu(null);
+                        }}
                         onDelete={() => onDelete(item.id)}
                         onAddRequest={() => onAddRequest(item.id)}
                         onAddFolder={() => onAddFolder(item.id)}
@@ -167,14 +238,30 @@ export default function CollectionTreeItem({
     return (
         <>
             <div
-                className={`flex items-center gap-2 p-2 rounded transition-all duration-150 group ${isActive
-                        ? 'bg-accent-secondary/20 border border-accent-secondary/40'
-                        : 'hover:bg-bg-tertiary/50 border border-transparent'
+                className={`flex items-center gap-2 p-2 rounded transition-all duration-150 group relative border-2 ${isDragOver
+                    ? 'bg-accent-primary/20 border-accent-primary'
+                    : isActive
+                        ? 'bg-accent-secondary/20 border-accent-secondary/40'
+                        : 'hover:bg-bg-tertiary/50 border-transparent'
                     }`}
                 style={{ paddingLeft: `${indent + 8}px` }}
+                draggable={!isEditing}
+                onDragStart={handleDragStart}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
             >
+                {/* Indent guide lines */}
+                {level > 0 && Array.from({ length: level }).map((_, idx) => (
+                    <div
+                        key={idx}
+                        className="absolute top-0 bottom-0 w-px bg-gray-700/40"
+                        style={{ left: `${idx * 16 + 8}px` }}
+                    />
+                ))}
+
                 <button
-                    onClick={() => onSelectRequest(request, collectionId)}
+                    onClick={() => onSelectRequest(request, item.id, collectionId)}
                     className="flex items-center gap-2 flex-1 min-w-0"
                 >
                     <span className={`${getMethodColor(request.method)} text-white text-[10px] font-bold px-2 py-0.5 rounded flex-shrink-0`}>
@@ -191,7 +278,7 @@ export default function CollectionTreeItem({
                                 if (e.key === 'Enter') handleSaveRename();
                                 if (e.key === 'Escape') {
                                     setEditName(item.name);
-                                    setIsEditing(false);
+                                    if (onStopEdit) onStopEdit();
                                 }
                             }}
                             onClick={(e) => e.stopPropagation()}
@@ -203,7 +290,7 @@ export default function CollectionTreeItem({
                             className="text-sm text-text-secondary group-hover:text-text-primary truncate"
                             onDoubleClick={(e) => {
                                 e.stopPropagation();
-                                setIsEditing(true);
+                                if (onStartEdit) onStartEdit(item.id);
                             }}
                         >
                             {item.name}
@@ -231,7 +318,10 @@ export default function CollectionTreeItem({
                     x={contextMenu.x}
                     y={contextMenu.y}
                     onClose={() => setContextMenu(null)}
-                    onRename={() => setIsEditing(true)}
+                    onRename={() => {
+                        if (onStartEdit) onStartEdit(item.id);
+                        setContextMenu(null);
+                    }}
                     onDelete={() => onDelete(item.id)}
                     onAddRequest={() => onAddRequest(item.id)}
                     onAddFolder={() => onAddFolder(item.id)}
