@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { Request, KeyValue } from '../types'
+import EditableJsonViewer from './EditableJsonViewer'
+import MethodDropdown from './MethodDropdown'
 
 interface RequestEditorProps {
     request: Request | null
@@ -67,17 +69,10 @@ export default function RequestEditor({
         <div className="flex-1 flex flex-col p-4">
             {/* URL Bar */}
             <div className="flex gap-2 mb-4">
-                <select
+                <MethodDropdown
                     value={request.method}
-                    onChange={(e) => updateRequest({ method: e.target.value })}
-                    className="px-3 py-2 bg-bg-tertiary border border-gray-600 rounded focus:outline-none focus:border-accent-secondary text-sm font-medium"
-                >
-                    <option>GET</option>
-                    <option>POST</option>
-                    <option>PUT</option>
-                    <option>DELETE</option>
-                    <option>PATCH</option>
-                </select>
+                    onChange={(method) => updateRequest({ method })}
+                />
 
                 <input
                     type="text"
@@ -255,15 +250,17 @@ export default function RequestEditor({
                     </div>
                 )}
 
+
                 {activeTab === 'body' && (
                     <div>
                         <p className="text-sm font-medium mb-3">Request Body (JSON)</p>
-                        <textarea
-                            value={request.body}
-                            onChange={(e) => updateRequest({ body: e.target.value })}
-                            placeholder={'{\n  "key": "value"\n}'}
-                            className="w-full h-64 px-4 py-3 bg-bg-primary border border-gray-600 rounded focus:outline-none focus:border-accent-secondary text-sm font-mono"
-                        />
+                        <div className="w-full h-64 bg-bg-primary border border-gray-600 rounded overflow-hidden">
+                            <EditableJsonViewer
+                                value={request.body}
+                                onChange={(newValue) => updateRequest({ body: newValue })}
+                                placeholder={'{\n  "key": "value"\n}'}
+                            />
+                        </div>
                     </div>
                 )}
             </div>

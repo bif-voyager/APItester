@@ -1,123 +1,227 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Sidebar from './components/Sidebar'
 import RequestEditor from './components/RequestEditor'
 import ResponseViewer from './components/ResponseViewer'
-import { Collection, Request } from './types'
+import { Collection, Request, CollectionItem } from './types'
+import {
+    generateId,
+    addRequestToTree,
+    addFolderToTree,
+    deleteItemFromTree,
+    renameItemInTree,
+    toggleExpandInTree,
+    findRequestInTree,
+} from './utils/collectionTreeHelpers'
 
 function App() {
-    // Load from localStorage on mount
+    // Load and migrate from localStorage on mount
     const [collections, setCollections] = useState<Collection[]>(() => {
         const saved = localStorage.getItem('api-client-collections')
-        return saved ? JSON.parse(saved) : []
+        if (!saved) return []
+
+        try {
+            const parsed = JSON.parse(saved)
+            // Migrate old format to new nested structure
+            return parsed.map((col: any) => {
+                if (col.requests && !col.items) {
+                    // Old format - migrate
+                    const items: CollectionItem[] = col.requests.map((req: Request) => ({
+                        id: generateId(),
+                        name: req.name,
+                        type: 'request' as const,
+                        request: req,
+                    }))
+                    return {
+                        id: col.id,
+                        name: col.name,
+                        items,
+                        isExpanded: true,
+                    }
+                }
+                return col
+            })
+        } catch {
+            return []
+        }
     })
+
     const [currentRequest, setCurrentRequest] = useState<Request | null>(null)
+    const [currentRequestId, setCurrentRequestId] = useState<string | null>(null)
     const [currentCollectionId, setCurrentCollectionId] = useState<string | null>(null)
     const [response, setResponse] = useState<any>(null)
 
     // Save to localStorage whenever collections change
-    const updateCollections = (newCollections: Collection[]) => {
-        setCollections(newCollections)
-        localStorage.setItem('api-client-collections', JSON.stringify(newCollections))
-    }
+    useEffect(() => {
+        localStorage.setItem('api-client-collections', JSON.stringify(collections))
+    }, [collections])
 
     const addCollection = (name: string) => {
         const newCollection: Collection = {
-            id: crypto.randomUUID(),
+            id: generateId(),
             name,
-            requests: []
+            items: [],
+            isExpanded: true,
         }
-        updateCollections([...collections, newCollection])
+        setCollections([...collections, newCollection])
     }
 
     const deleteCollection = (collectionId: string) => {
-        if (confirm('Delete this collection and all its requests?')) {
-            updateCollections(collections.filter(c => c.id !== collectionId))
+        if (confirm('Delete this collection and all its items?')) {
+            setCollections(collections.filter((c) => c.id !== collectionId))
             if (currentCollectionId === collectionId) {
                 setCurrentRequest(null)
+                setCurrentRequestId(null)
                 setCurrentCollectionId(null)
             }
         }
     }
 
     const renameCollection = (collectionId: string, newName: string) => {
-        updateCollections(collections.map(col =>
-            col.id === collectionId ? { ...col, name: newName } : col
-        ))
+        setCollections(
+            collections.map((col) =>
+                col.id === collectionId ? { ...col, name: newName } : col
+            )
+        )
     }
 
-    const addRequest = (collectionId: string) => {
+    const toggleCollectionExpand = (collectionId: string) => {
+        setCollections(
+            collections.map((col) =>
+                col.id === collectionId ? { ...col, isExpanded: !col.isExpanded } : col
+            )
+        )
+    }
+
+    const addRequestToCollection = (collectionId: string, parentId?: string) => {
         const newRequest: Request = {
-            id: crypto.randomUUID(),
+            id: generateId(),
             name: 'Untitled Request',
             method: 'GET',
             url: '',
             params: [],
             headers: [],
-            body: ''
+            body: '',
         }
 
-        updateCollections(collections.map(col =>
-            col.id === collectionId
-                ? { ...col, requests: [...col.requests, newRequest] }
-                : col
-        ))
+        setCollections(
+            collections.map((col) => {
+                if (col.id === collectionId) {
+                    return {
+                        ...col,
+                        items: addRequestToTree(col.items, parentId || null, newRequest),
+                    }
+                }
+                return col
+            })
+        )
 
         setCurrentRequest(newRequest)
+        setCurrentRequestId(newRequest.id)
         setCurrentCollectionId(collectionId)
     }
 
     const importRequest = (collectionId: string, requestData: Partial<Request>) => {
         const newRequest: Request = {
-            id: crypto.randomUUID(),
+            id: generateId(),
             name: requestData.name || requestData.url?.split('/').pop() || 'Imported Request',
             method: requestData.method || 'GET',
             url: requestData.url || '',
             params: requestData.params || [],
             headers: requestData.headers || [],
-            body: requestData.body || ''
+            body: requestData.body || '',
         }
 
-        updateCollections(collections.map(col =>
-            col.id === collectionId
-                ? { ...col, requests: [...col.requests, newRequest] }
-                : col
-        ))
+        setCollections(
+            collections.map((col) => {
+                if (col.id === collectionId) {
+                    return {
+                        ...col,
+                        items: addRequestToTree(col.items, null, newRequest),
+                    }
+                }
+                return col
+            })
+        )
 
         setCurrentRequest(newRequest)
+        setCurrentRequestId(newRequest.id)
         setCurrentCollectionId(collectionId)
     }
 
-    const deleteRequest = (collectionId: string, requestId: string) => {
-        if (confirm('Delete this request?')) {
-            updateCollections(collections.map(col =>
-                col.id === collectionId
-                    ? { ...col, requests: col.requests.filter(r => r.id !== requestId) }
-                    : col
-            ))
-            if (currentRequest?.id === requestId) {
+    const addFolder = (collectionId: string, parentId: string | null) => {
+        const name = prompt('Folder name:')
+        if (!name?.trim()) return
+
+        setCollections(
+            collections.map((col) => {
+                if (col.id === collectionId) {
+                    return {
+                        ...col,
+                        items: addFolderToTree(col.items, parentId, name.trim()),
+                    }
+                }
+                return col
+            })
+        )
+    }
+
+    const deleteItem = (collectionId: string, itemId: string) => {
+        if (confirm('Delete this item?')) {
+            setCollections(
+                collections.map((col) => {
+                    if (col.id === collectionId) {
+                        return {
+                            ...col,
+                            items: deleteItemFromTree(col.items, itemId),
+                        }
+                    }
+                    return col
+                })
+            )
+
+            if (currentRequestId === itemId) {
                 setCurrentRequest(null)
+                setCurrentRequestId(null)
             }
         }
     }
 
-    const renameRequest = (collectionId: string, requestId: string, newName: string) => {
-        updateCollections(collections.map(col =>
-            col.id === collectionId
-                ? {
-                    ...col,
-                    requests: col.requests.map(req =>
-                        req.id === requestId ? { ...req, name: newName } : req
-                    )
+    const renameItem = (collectionId: string, itemId: string, newName: string) => {
+        setCollections(
+            collections.map((col) => {
+                if (col.id === collectionId) {
+                    return {
+                        ...col,
+                        items: renameItemInTree(col.items, itemId, newName),
+                    }
                 }
-                : col
-        ))
-        if (currentRequest?.id === requestId) {
+                return col
+            })
+        )
+
+        // Update current request name if it's the one being renamed
+        if (currentRequestId === itemId && currentRequest) {
             setCurrentRequest({ ...currentRequest, name: newName })
         }
     }
 
-    const selectRequest = (request: Request, collectionId: string) => {
+    const toggleItemExpand = (collectionId: string, itemId: string) => {
+        setCollections(
+            collections.map((col) => {
+                if (col.id === collectionId) {
+                    return {
+                        ...col,
+                        items: toggleExpandInTree(col.items, itemId),
+                    }
+                }
+                return col
+            })
+        )
+    }
+
+    const selectRequest = (request: Request, requestId: string, collectionId: string) => {
         setCurrentRequest(request)
+        setCurrentRequestId(requestId)
         setCurrentCollectionId(collectionId)
         setResponse(null)
     }
@@ -126,12 +230,27 @@ function App() {
         setCurrentRequest(updatedRequest)
 
         // Sync changes back to collection
-        updateCollections(collections.map(col => ({
-            ...col,
-            requests: col.requests.map(req =>
-                req.id === updatedRequest.id ? updatedRequest : req
+        if (currentCollectionId && currentRequestId) {
+            setCollections(
+                collections.map((col) => {
+                    if (col.id === currentCollectionId) {
+                        const updateInTree = (items: CollectionItem[]): CollectionItem[] => {
+                            return items.map((item) => {
+                                if (item.type === 'request' && item.id === currentRequestId) {
+                                    return { ...item, request: updatedRequest }
+                                }
+                                if (item.type === 'folder') {
+                                    return { ...item, children: updateInTree(item.children) }
+                                }
+                                return item
+                            })
+                        }
+                        return { ...col, items: updateInTree(col.items) }
+                    }
+                    return col
+                })
             )
-        })))
+        }
     }
 
     const sendRequest = async (request: Request) => {
@@ -141,16 +260,16 @@ function App() {
             // Build URL with params (only enabled ones)
             const url = new URL(request.url)
             request.params
-                .filter(param => param.enabled !== false && param.key)
-                .forEach(param => {
+                .filter((param) => param.enabled !== false && param.key)
+                .forEach((param) => {
                     url.searchParams.append(param.key, param.value)
                 })
 
             // Build headers (only enabled ones)
             const headers: Record<string, string> = {}
             request.headers
-                .filter(header => header.enabled !== false && header.key)
-                .forEach(header => {
+                .filter((header) => header.enabled !== false && header.key)
+                .forEach((header) => {
                     headers[header.key] = header.value
                 })
 
@@ -159,7 +278,7 @@ function App() {
             const response = await fetch(url.toString(), {
                 method: request.method,
                 headers,
-                body: request.method !== 'GET' && request.body ? request.body : undefined
+                body: request.method !== 'GET' && request.body ? request.body : undefined,
             })
             const elapsed = Math.round(performance.now() - startTime)
 
@@ -176,12 +295,12 @@ function App() {
                 statusText: response.statusText,
                 headers: Object.fromEntries(response.headers.entries()),
                 body: jsonData,
-                time: elapsed
+                time: elapsed,
             })
         } catch (error: any) {
             setResponse({
                 error: true,
-                message: error.message
+                message: error.message,
             })
         }
     }
@@ -208,14 +327,17 @@ function App() {
             <div className="flex w-full pt-14">
                 <Sidebar
                     collections={collections}
-                    currentRequestId={currentRequest?.id}
+                    currentRequestId={currentRequestId}
                     onAddCollection={addCollection}
                     onDeleteCollection={deleteCollection}
                     onRenameCollection={renameCollection}
-                    onAddRequest={addRequest}
+                    onToggleCollectionExpand={toggleCollectionExpand}
+                    onAddRequest={addRequestToCollection}
                     onImportRequest={importRequest}
-                    onDeleteRequest={deleteRequest}
-                    onRenameRequest={renameRequest}
+                    onAddFolder={addFolder}
+                    onDeleteItem={deleteItem}
+                    onRenameItem={renameItem}
+                    onToggleItemExpand={toggleItemExpand}
                     onSelectRequest={selectRequest}
                 />
 

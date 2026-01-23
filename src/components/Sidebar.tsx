@@ -1,18 +1,23 @@
 import { Collection, Request } from '../types'
 import { useState } from 'react'
 import { parseCurl } from '../utils/curlParser'
+import CollectionTreeItem from './CollectionTreeItem'
+import ContextMenu from './ContextMenu'
 
 interface SidebarProps {
     collections: Collection[]
-    currentRequestId?: string
+    currentRequestId?: string | null
     onAddCollection: (name: string) => void
     onDeleteCollection: (collectionId: string) => void
     onRenameCollection: (collectionId: string, newName: string) => void
-    onAddRequest: (collectionId: string) => void
+    onToggleCollectionExpand: (collectionId: string) => void
+    onAddRequest: (collectionId: string, parentId?: string) => void
     onImportRequest: (collectionId: string, requestData: Partial<Request>) => void
-    onDeleteRequest: (collectionId: string, requestId: string) => void
-    onRenameRequest: (collectionId: string, requestId: string, newName: string) => void
-    onSelectRequest: (request: Request, collectionId: string) => void
+    onAddFolder: (collectionId: string, parentId: string | null) => void
+    onDeleteItem: (collectionId: string, itemId: string) => void
+    onRenameItem: (collectionId: string, itemId: string, newName: string) => void
+    onToggleItemExpand: (collectionId: string, itemId: string) => void
+    onSelectRequest: (request: Request, requestId: string, collectionId: string) => void
 }
 
 export default function Sidebar({
@@ -21,18 +26,25 @@ export default function Sidebar({
     onAddCollection,
     onDeleteCollection,
     onRenameCollection,
+    onToggleCollectionExpand,
     onAddRequest,
     onImportRequest,
-    onDeleteRequest,
-    onRenameRequest,
-    onSelectRequest
+    onAddFolder,
+    onDeleteItem,
+    onRenameItem,
+    onToggleItemExpand,
+    onSelectRequest,
 }: SidebarProps) {
     const [editingCollection, setEditingCollection] = useState<string | null>(null)
-    const [editingRequest, setEditingRequest] = useState<string | null>(null)
     const [editName, setEditName] = useState('')
     const [showImportModal, setShowImportModal] = useState(false)
     const [curlInput, setCurlInput] = useState('')
     const [selectedCollectionId, setSelectedCollectionId] = useState<string>('')
+    const [collectionContextMenu, setCollectionContextMenu] = useState<{
+        collectionId: string
+        x: number
+        y: number
+    } | null>(null)
 
     const handleAddCollection = () => {
         const name = prompt('Collection name:')
@@ -49,28 +61,6 @@ export default function Sidebar({
             onRenameCollection(id, editName.trim())
         }
         setEditingCollection(null)
-    }
-
-    const startEditRequest = (id: string, currentName: string) => {
-        setEditingRequest(id)
-        setEditName(currentName)
-    }
-
-    const saveRequestName = (collectionId: string, requestId: string) => {
-        if (editName.trim()) {
-            onRenameRequest(collectionId, requestId, editName.trim())
-        }
-        setEditingRequest(null)
-    }
-
-    const getMethodColor = (method: string) => {
-        const colors: Record<string, string> = {
-            GET: 'bg-green-500',
-            POST: 'bg-orange-500',
-            PUT: 'bg-blue-500',
-            DELETE: 'bg-red-500',
-        }
-        return colors[method] || 'bg-gray-500'
     }
 
     return (
@@ -117,10 +107,31 @@ export default function Sidebar({
                         <div key={collection.id} className="mb-3 bg-bg-primary/30 rounded-lg p-2">
                             {/* Collection Header */}
                             <div className="flex items-center gap-2 p-2 rounded hover:bg-bg-tertiary/50 group">
+                                {/* Expand/Collapse Arrow */}
+                                <button
+                                    onClick={() => onToggleCollectionExpand(collection.id)}
+                                    className="p-0.5 hover:bg-bg-primary rounded flex-shrink-0"
+                                >
+                                    <svg
+                                        className={`w-3 h-3 text-text-tertiary transition-transform ${collection.isExpanded ? 'rotate-90' : ''
+                                            }`}
+                                        fill="currentColor"
+                                        viewBox="0 0 20 20"
+                                    >
+                                        <path
+                                            fillRule="evenodd"
+                                            d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
+                                            clipRule="evenodd"
+                                        />
+                                    </svg>
+                                </button>
+
+                                {/* Collection Icon */}
                                 <svg className="w-4 h-4 text-accent-secondary flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                                     <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
                                 </svg>
 
+                                {/* Collection Name */}
                                 {editingCollection === collection.id ? (
                                     <input
                                         type="text"
@@ -143,22 +154,31 @@ export default function Sidebar({
                                             {collection.name}
                                         </span>
                                         <div className="opacity-0 group-hover:opacity-100 flex gap-1">
+                                            {/* Quick Add Button */}
                                             <button
-                                                onClick={() => startEditCollection(collection.id, collection.name)}
+                                                onClick={() => onAddRequest(collection.id)}
                                                 className="p-1 hover:bg-bg-primary rounded"
-                                                title="Rename"
+                                                title="Add Request"
                                             >
-                                                <svg className="w-3 h-3 text-text-tertiary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                                <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                                                 </svg>
                                             </button>
+                                            {/* Three-dots Menu */}
                                             <button
-                                                onClick={() => onDeleteCollection(collection.id)}
-                                                className="p-1 hover:bg-red-500/20 rounded"
-                                                title="Delete Collection"
+                                                onClick={(e) => {
+                                                    e.stopPropagation()
+                                                    setCollectionContextMenu({
+                                                        collectionId: collection.id,
+                                                        x: e.clientX,
+                                                        y: e.clientY,
+                                                    })
+                                                }}
+                                                className="p-1 hover:bg-bg-primary rounded"
+                                                title="More options"
                                             >
-                                                <svg className="w-3 h-3 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                <svg className="w-4 h-4 text-text-tertiary" fill="currentColor" viewBox="0 0 20 20">
+                                                    <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
                                                 </svg>
                                             </button>
                                         </div>
@@ -166,95 +186,58 @@ export default function Sidebar({
                                 )}
                             </div>
 
-                            {/* Requests */}
-                            <div className="ml-2 mt-1 space-y-1">
-                                {collection.requests.map((request) => (
-                                    <div
-                                        key={request.id}
-                                        className={`flex items-center gap-2 p-2 rounded transition-all duration-150 group ${currentRequestId === request.id
-                                            ? 'bg-accent-secondary/20 border border-accent-secondary/40'
-                                            : 'hover:bg-bg-tertiary/50 border border-transparent'
-                                            }`}
-                                    >
-                                        <button
-                                            onClick={() => onSelectRequest(request, collection.id)}
-                                            className="flex items-center gap-2 flex-1 min-w-0"
-                                        >
-                                            <span className={`${getMethodColor(request.method)} text-white text-[10px] font-bold px-2 py-0.5 rounded flex-shrink-0`}>
-                                                {request.method}
-                                            </span>
-
-                                            {editingRequest === request.id ? (
-                                                <input
-                                                    type="text"
-                                                    value={editName}
-                                                    onChange={(e) => setEditName(e.target.value)}
-                                                    onBlur={() => saveRequestName(collection.id, request.id)}
-                                                    onKeyDown={(e) => {
-                                                        if (e.key === 'Enter') saveRequestName(collection.id, request.id)
-                                                        if (e.key === 'Escape') setEditingRequest(null)
-                                                    }}
-                                                    onClick={(e) => e.stopPropagation()}
-                                                    className="flex-1 px-2 py-1 bg-bg-tertiary border border-accent-secondary rounded text-xs focus:outline-none"
-                                                    autoFocus
-                                                />
-                                            ) : (
-                                                <span
-                                                    className="text-sm text-text-secondary group-hover:text-text-primary truncate"
-                                                    onDoubleClick={(e) => {
-                                                        e.stopPropagation()
-                                                        startEditRequest(request.id, request.name)
-                                                    }}
-                                                >
-                                                    {request.name}
-                                                </span>
-                                            )}
-                                        </button>
-
-                                        <div className="opacity-0 group-hover:opacity-100 flex gap-1 flex-shrink-0">
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation()
-                                                    startEditRequest(request.id, request.name)
-                                                }}
-                                                className="p-1 hover:bg-bg-primary rounded"
-                                                title="Rename"
-                                            >
-                                                <svg className="w-3 h-3 text-text-tertiary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                                </svg>
-                                            </button>
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation()
-                                                    onDeleteRequest(collection.id, request.id)
-                                                }}
-                                                className="p-1 hover:bg-red-500/20 rounded"
-                                                title="Delete"
-                                            >
-                                                <svg className="w-3 h-3 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                                </svg>
-                                            </button>
-                                        </div>
-                                    </div>
-                                ))}
-
-                                {/* Add Request Button */}
-                                <button
-                                    onClick={() => onAddRequest(collection.id)}
-                                    className="w-full flex items-center gap-2 p-2 rounded hover:bg-accent-primary/10 text-text-tertiary hover:text-accent-primary transition-all duration-150 border border-dashed border-transparent hover:border-accent-primary/30"
-                                >
-                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                                    </svg>
-                                    <span className="text-xs font-medium">New Request</span>
-                                </button>
-                            </div>
+                            {/* Collection Items (Tree) */}
+                            {collection.isExpanded && (
+                                <div className="ml-2 mt-1">
+                                    {collection.items.map((item) => (
+                                        <CollectionTreeItem
+                                            key={item.id}
+                                            item={item}
+                                            collectionId={collection.id}
+                                            level={0}
+                                            currentRequestId={currentRequestId || undefined}
+                                            onSelectRequest={(req) => onSelectRequest(req, item.id, collection.id)}
+                                            onToggleExpand={(itemId) => onToggleItemExpand(collection.id, itemId)}
+                                            onRename={(itemId, newName) => onRenameItem(collection.id, itemId, newName)}
+                                            onDelete={(itemId) => onDeleteItem(collection.id, itemId)}
+                                            onAddRequest={(parentId) => onAddRequest(collection.id, parentId)}
+                                            onAddFolder={(parentId) => onAddFolder(collection.id, parentId)}
+                                        />
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     ))
                 )}
             </div>
+
+            {/* Collection Context Menu */}
+            {collectionContextMenu && (
+                <ContextMenu
+                    x={collectionContextMenu.x}
+                    y={collectionContextMenu.y}
+                    onClose={() => setCollectionContextMenu(null)}
+                    onRename={() => {
+                        const col = collections.find(c => c.id === collectionContextMenu.collectionId)
+                        if (col) {
+                            startEditCollection(collectionContextMenu.collectionId, col.name)
+                        }
+                        setCollectionContextMenu(null)
+                    }}
+                    onDelete={() => {
+                        onDeleteCollection(collectionContextMenu.collectionId)
+                        setCollectionContextMenu(null)
+                    }}
+                    onAddRequest={() => {
+                        onAddRequest(collectionContextMenu.collectionId)
+                        setCollectionContextMenu(null)
+                    }}
+                    onAddFolder={() => {
+                        onAddFolder(collectionContextMenu.collectionId, null)
+                        setCollectionContextMenu(null)
+                    }}
+                />
+            )}
 
             {/* Import Modal */}
             {showImportModal && (
@@ -289,9 +272,7 @@ export default function Sidebar({
                             <textarea
                                 value={curlInput}
                                 onChange={(e) => setCurlInput(e.target.value)}
-                                placeholder={`curl -X POST https://api.example.com/users \\
-  -H "Content-Type: application/json" \\
-  -d '{"name": "John"}'`}
+                                placeholder={`curl -X POST https://api.example.com/users \\\\\n  -H "Content-Type: application/json" \\\\\n  -d '{"name": "John"}'`}
                                 className="w-full h-40 px-3 py-2 bg-bg-tertiary border border-gray-700 rounded font-mono text-sm focus:outline-none focus:ring-2 focus:ring-accent-secondary resize-none"
                             />
                         </div>
@@ -312,7 +293,6 @@ export default function Sidebar({
 
                                     const parsed = parseCurl(curlInput)
                                     if (parsed && parsed.url) {
-                                        // Import request with all parsed data
                                         onImportRequest(selectedCollectionId, parsed)
                                         setShowImportModal(false)
                                         setCurlInput('')

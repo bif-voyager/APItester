@@ -1,78 +1,78 @@
-# APItester - Modern API Client
+# API Tester
 
-Modern Postman-like API client built with React, TypeScript, and Tailwind CSS.
+A clean, modern API testing tool built with React and TypeScript. Think Postman but simpler and prettier.
 
-## 🚀 Features
+## What it does
 
-- ✅ Beautiful dark UI with glassmorphism effects
-- ✅ Collections & requests management with localStorage persistence
-- ✅ Full CRUD operations (Create, Read, Update, Delete)
-- ✅ HTTP methods: GET, POST, PUT, DELETE, PATCH
-- ✅ Query parameters, custom headers, and JSON body
-- ✅ Response viewer with syntax highlighting
-- ✅ Status code indicators with color coding
-- ✅ Inline editing for collections and requests
-- ✅ Modern, responsive interface
+Test REST APIs right from your browser. Send HTTP requests, organize them in collections, and see nicely formatted responses. All your data stays in your browser's localStorage.
 
-## 📦 Installation
+## Getting started
 
 ```bash
 npm install
-```
-
-## 🏃 Run Development Server
-
-```bash
 npm run dev
 ```
 
-Then open your browser to `http://localhost:5173`
+Visit http://localhost:5173/APItester/
 
-## 🔨 Build for Production
+## Features
+
+- **Collections & Folders** - Organize requests in nested folders
+- **HTTP Methods** - GET, POST, PUT, DELETE, PATCH
+- **Request Building** - Query params, headers, JSON body
+- **JSON Highlighting** - Syntax colored JSON in requests and responses
+- **Method Colors** - Each HTTP method has its own color (GET=green, POST=orange, etc.)
+- **Import cURL** - Paste cURL commands to create requests
+- **Context Menus** - Right-click style menus for quick actions
+- **Auto-save** - Everything saves automatically to localStorage
+
+## Quick test
+
+Try this to see it in action:
+- Create a collection
+- Add a request
+- Set method to GET
+- URL: `https://jsonplaceholder.typicode.com/users`
+- Hit Send
+
+You should see a list of fake users with nice syntax highlighting.
+
+## How to use
+
+1. Click **+ New** to create a collection
+2. Click the **+** icon on a collection to add a request
+3. Pick your HTTP method from the dropdown
+4. Enter the URL
+5. Add params, headers, or body as needed
+6. Click **Send**
+
+The **⋮** menu on collections and requests gives you more options like rename, delete, add folder, etc.
+
+## Deploy
+
+This app is set up to deploy to GitHub Pages:
 
 ```bash
-npm run build
+npm run deploy
 ```
 
-## 🎯 Usage
+Your app will be live at `https://yourusername.github.io/APItester/`
 
-1. **Create a Collection**: Click the `+` button in the sidebar
-2. **Add a Request**: Click "New Request" under a collection
-3. **Configure Request**:
-   - Select HTTP method (GET, POST, etc.)
-   - Enter URL (e.g., `https://jsonplaceholder.typicode.com/users`)
-   - Add query parameters in the Params tab
-   - Add headers in the Headers tab
-   - Add request body in the Body tab
-4. **Send Request**: Click the orange "Send" button
-5. **View Response**: See the response with status code, time, and formatted JSON
-6. **Edit/Delete**: Double-click to rename, or use action buttons
+## Stack
 
-## 🧪 Try It Out
+- React 18 + TypeScript
+- Vite for blazing fast dev
+- Tailwind CSS for styling
+- No backend needed - everything runs client-side
 
-Try this example:
-- URL: `https://jsonplaceholder.typicode.com/users`
-- Method: GET
-- Click Send
+## Project structure
 
-Or for POST:
-- URL: `https://jsonplaceholder.typicode.com/posts`
-- Method: POST
-- Body: `{"title": "test", "body": "test body", "userId": 1}`
+```
+src/
+  components/     - UI components
+  utils/          - Helper functions
+  types.ts        - TypeScript types
+  App.tsx         - Main app
+```
 
-## 🛠️ Tech Stack
-
-- React 18
-- TypeScript
-- Vite
-- Tailwind CSS
-- Zustand (state management)
-- Native Fetch API
-
-## Next Steps (Optional)
-
-To make this a desktop app with Electron:
-1. Install: `npm install electron electron-builder concurrently wait-on`
-2. Create `electron/main.ts`
-3. Configure electron-builder in package.json
-4. Run: `npm run electron:dev`
+Built this to learn React and make API testing less painful. Hope it helps!

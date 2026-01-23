@@ -14,10 +14,24 @@ export interface Request {
     body: string
 }
 
+export type CollectionItem = {
+    id: string
+    name: string
+    type: 'folder'
+    children: CollectionItem[]
+    isExpanded?: boolean
+} | {
+    id: string
+    name: string
+    type: 'request'
+    request: Request
+}
+
 export interface Collection {
     id: string
     name: string
-    requests: Request[]
+    items: CollectionItem[]
+    isExpanded?: boolean
 }
 
 export interface Response {
