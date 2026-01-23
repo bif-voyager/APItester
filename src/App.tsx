@@ -10,7 +10,6 @@ import {
     deleteItemFromTree,
     renameItemInTree,
     toggleExpandInTree,
-    findRequestInTree,
 } from './utils/collectionTreeHelpers'
 
 function App() {

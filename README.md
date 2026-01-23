@@ -1,78 +1,66 @@
 # API Tester
 
-A clean, modern API testing tool built with React and TypeScript. Think Postman but simpler and prettier.
+Современный и удобный инструмент для тестирования API, созданный на React и TypeScript. Как Postman, только проще и красивее.
 
-## What it does
+## Возможности
 
-Test REST APIs right from your browser. Send HTTP requests, organize them in collections, and see nicely formatted responses. All your data stays in your browser's localStorage.
+Тестируйте REST API прямо в браузере. Отправляйте запросы, организуйте их в коллекции и папки, просматривайте ответы с подсветкой синтаксиса. Все данные хранятся локально в вашем браузере.
 
-## Getting started
+## Быстрый старт
 
 ```bash
 npm install
 npm run dev
 ```
 
-Visit http://localhost:5173/APItester/
+Откройте http://localhost:5173/APItester/
 
-## Features
+## Основные функции
 
-- **Collections & Folders** - Organize requests in nested folders
-- **HTTP Methods** - GET, POST, PUT, DELETE, PATCH
-- **Request Building** - Query params, headers, JSON body
-- **JSON Highlighting** - Syntax colored JSON in requests and responses
-- **Method Colors** - Each HTTP method has its own color (GET=green, POST=orange, etc.)
-- **Import cURL** - Paste cURL commands to create requests
-- **Context Menus** - Right-click style menus for quick actions
-- **Auto-save** - Everything saves automatically to localStorage
+- **Коллекции и папки** - Группируйте запросы в удобную структуру
+- **HTTP Методы** - Поддержка GET, POST, PUT, DELETE, PATCH
+- **Конструктор запросов** - Удобное добавление параметров, заголовков и JSON тела
+- **Подсветка JSON** - Красивое отображение JSON в запросах и ответах
+- **Цветовая индикация** - Каждому методу свой цвет (GET=зеленый, POST=оранжевый и т.д.)
+- **Импорт cURL** - Вставьте команду cURL, чтобы мгновенно создать запрос
+- **Контекстные меню** - Переименование, удаление и создание папок через правый клик или меню
+- **Автосохранение** - Вся работа автоматически сохраняется в localStorage
 
-## Quick test
+## Как использовать
 
-Try this to see it in action:
-- Create a collection
-- Add a request
-- Set method to GET
-- URL: `https://jsonplaceholder.typicode.com/users`
-- Hit Send
+1. Нажмите **+ New** чтобы создать новую коллекцию
+2. Нажмите иконку **+** или **⋮** на коллекции, чтобы добавить запрос или папку
+3. Выберите нужный HTTP метод из выпадающего списка
+4. Введите URL и нажмите **Send**
+5. Добавляйте параметры (Params), заголовки (Headers) или тело запроса (Body) по необходимости
 
-You should see a list of fake users with nice syntax highlighting.
+Меню **⋮** позволяет управлять элементами: переименовывать, удалять, создавать вложенные структуры.
 
-## How to use
+## Деплой
 
-1. Click **+ New** to create a collection
-2. Click the **+** icon on a collection to add a request
-3. Pick your HTTP method from the dropdown
-4. Enter the URL
-5. Add params, headers, or body as needed
-6. Click **Send**
-
-The **⋮** menu on collections and requests gives you more options like rename, delete, add folder, etc.
-
-## Deploy
-
-This app is set up to deploy to GitHub Pages:
+Приложение настроено для деплоя на GitHub Pages:
 
 ```bash
 npm run deploy
 ```
 
-Your app will be live at `https://yourusername.github.io/APItester/`
+Сайт будет доступен по адресу `https://ваш-юзернейм.github.io/APItester/`
 
-## Stack
+## Технологии
 
 - React 18 + TypeScript
-- Vite for blazing fast dev
-- Tailwind CSS for styling
-- No backend needed - everything runs client-side
+- Vite для быстрой сборки
+- Tailwind CSS для стилей
+- Полностью клиентское приложение (Backend-less)
 
-## Project structure
+## Структура проекта
 
 ```
 src/
-  components/     - UI components
-  utils/          - Helper functions
-  types.ts        - TypeScript types
-  App.tsx         - Main app
+  components/     - UI компоненты
+  utils/          - Вспомогательные функции
+  types.ts        - TypeScript типы
+  App.tsx         - Основной файл приложения
 ```
 
-Built this to learn React and make API testing less painful. Hope it helps!
+Разработано как простой и удобный инструмент для работы с API. Надеюсь, вам понравится!
