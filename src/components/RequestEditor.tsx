@@ -41,6 +41,43 @@ export default function RequestEditor({
         onUpdateRequest({ ...request, ...updates })
     }
 
+    // Helper function to get default headers based on HTTP method
+    const getDefaultHeadersForMethod = (method: string): KeyValue[] => {
+        const baseHeaders: KeyValue[] = [
+            { key: 'User-Agent', value: 'APIClient/1.0', enabled: true },
+            { key: 'Accept', value: '*/*', enabled: true },
+            { key: 'Accept-Encoding', value: 'gzip, deflate, br', enabled: true },
+            { key: 'Connection', value: 'keep-alive', enabled: true },
+        ]
+
+        if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+            return [
+                { key: 'Content-Type', value: 'application/json', enabled: true },
+                ...baseHeaders,
+            ]
+        }
+
+        return baseHeaders
+    }
+
+    // Handler for method changes - updates headers automatically
+    const handleMethodChange = (newMethod: string) => {
+        const oldMethod = request.method
+        const methodsWithBody = ['POST', 'PUT', 'PATCH', 'DELETE']
+        const hadBody = methodsWithBody.includes(oldMethod)
+        const hasBody = methodsWithBody.includes(newMethod)
+
+        // Only update headers if switching between body/no-body methods
+        if (hadBody !== hasBody) {
+            updateRequest({
+                method: newMethod,
+                headers: getDefaultHeadersForMethod(newMethod)
+            })
+        } else {
+            updateRequest({ method: newMethod })
+        }
+    }
+
     const addRow = (field: 'params' | 'headers') => {
         const newRow: KeyValue = { key: '', value: '', enabled: true }
         updateRequest({
@@ -61,6 +98,7 @@ export default function RequestEditor({
 
     const tabs = [
         { id: 'params', label: 'Params' },
+        { id: 'auth', label: 'Auth' },
         { id: 'headers', label: 'Headers' },
         { id: 'body', label: 'Body' },
     ]
@@ -71,16 +109,33 @@ export default function RequestEditor({
             <div className="flex gap-2 mb-4">
                 <MethodDropdown
                     value={request.method}
-                    onChange={(method) => updateRequest({ method })}
+                    onChange={handleMethodChange}
                 />
 
-                <input
-                    type="text"
-                    value={request.url}
-                    onChange={(e) => updateRequest({ url: e.target.value })}
-                    placeholder="Enter request URL (e.g., https://jsonplaceholder.typicode.com/users)"
-                    className="flex-1 px-4 py-2 bg-bg-tertiary border border-gray-600 rounded focus:outline-none focus:border-accent-secondary text-sm"
-                />
+                {/* URL Input with variable highlighting */}
+                <div className="flex-1 relative">
+                    {/* Highlight overlay - shows all text with colored variables */}
+                    <div
+                        className="absolute inset-0 px-4 py-2 text-sm pointer-events-none overflow-hidden whitespace-nowrap flex items-center"
+                        aria-hidden="true"
+                    >
+                        {request.url.split(/(\{[^}]+\})/).map((part, i) =>
+                            part.match(/^\{[^}]+\}$/) ? (
+                                <span key={i} className="text-orange-400">{part}</span>
+                            ) : (
+                                <span key={i} className="text-text-primary">{part}</span>
+                            )
+                        )}
+                    </div>
+                    {/* Invisible input for editing */}
+                    <input
+                        type="text"
+                        value={request.url}
+                        onChange={(e) => updateRequest({ url: e.target.value })}
+                        placeholder="Enter request URL (e.g., {baseUrl}/users)"
+                        className="w-full px-4 py-2 bg-bg-tertiary border border-gray-600 rounded focus:outline-none focus:border-accent-secondary text-sm text-transparent caret-white"
+                    />
+                </div>
 
                 <button
                     onClick={() => onSendRequest(request)}
@@ -157,6 +212,69 @@ export default function RequestEditor({
                             </svg>
                             Add Parameter
                         </button>
+                    </div>
+                )}
+
+                {activeTab === 'auth' && (
+                    <div className="space-y-4">
+                        <div>
+                            <label className="block text-sm font-medium mb-2 text-text-secondary">Auth Type</label>
+                            <select
+                                value={request.auth?.type || 'none'}
+                                onChange={(e) => updateRequest({
+                                    auth: { ...request.auth, type: e.target.value as any }
+                                })}
+                                className="w-full px-3 py-2 bg-bg-primary border border-gray-600 rounded focus:outline-none focus:border-accent-secondary text-sm"
+                            >
+                                <option value="none">No Auth</option>
+                                <option value="bearer">Bearer Token</option>
+                                <option value="basic">Basic Auth</option>
+                            </select>
+                        </div>
+
+                        {request.auth?.type === 'bearer' && (
+                            <div>
+                                <label className="block text-sm font-medium mb-2 text-text-secondary">Token</label>
+                                <input
+                                    type="text"
+                                    value={request.auth.bearerToken || ''}
+                                    onChange={(e) => updateRequest({
+                                        auth: { ...request.auth, type: 'bearer', bearerToken: e.target.value }
+                                    })}
+                                    placeholder="Enter Bearer Token"
+                                    className="w-full px-3 py-2 bg-bg-primary border border-gray-600 rounded focus:outline-none focus:border-accent-secondary text-sm"
+                                />
+                            </div>
+                        )}
+
+                        {request.auth?.type === 'basic' && (
+                            <div className="space-y-3">
+                                <div>
+                                    <label className="block text-sm font-medium mb-1 text-text-secondary">Username</label>
+                                    <input
+                                        type="text"
+                                        value={request.auth.basicUsername || ''}
+                                        onChange={(e) => updateRequest({
+                                            auth: { ...request.auth, type: 'basic', basicUsername: e.target.value }
+                                        })}
+                                        placeholder="Username"
+                                        className="w-full px-3 py-2 bg-bg-primary border border-gray-600 rounded focus:outline-none focus:border-accent-secondary text-sm"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium mb-1 text-text-secondary">Password</label>
+                                    <input
+                                        type="password"
+                                        value={request.auth.basicPassword || ''}
+                                        onChange={(e) => updateRequest({
+                                            auth: { ...request.auth, type: 'basic', basicPassword: e.target.value }
+                                        })}
+                                        placeholder="Password"
+                                        className="w-full px-3 py-2 bg-bg-primary border border-gray-600 rounded focus:outline-none focus:border-accent-secondary text-sm"
+                                    />
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
 

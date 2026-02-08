@@ -258,3 +258,18 @@ function insertItemBeforeSibling(
         return item;
     });
 }
+
+// Get all requests from collection items (recursive)
+export function getAllRequestsFromItems(items: CollectionItem[]): Request[] {
+    const requests: Request[] = [];
+
+    for (const item of items) {
+        if (item.type === 'request') {
+            requests.push(item.request);
+        } else if (item.type === 'folder') {
+            requests.push(...getAllRequestsFromItems(item.children));
+        }
+    }
+
+    return requests;
+}

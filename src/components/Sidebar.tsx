@@ -1,6 +1,7 @@
 import { Collection, Request } from '../types'
 import { useState } from 'react'
 import { parseCurl } from '../utils/curlParser'
+import { isSwaggerSpec, parseSwagger } from '../utils/swaggerParser'
 import CollectionTreeItem from './CollectionTreeItem'
 import ContextMenu from './ContextMenu'
 
@@ -8,6 +9,7 @@ interface SidebarProps {
     collections: Collection[]
     currentRequestId?: string | null
     onAddCollection: (name: string) => void
+    onAddFullCollection: (collection: Collection) => void
     onDeleteCollection: (collectionId: string) => void
     onRenameCollection: (collectionId: string, newName: string) => void
     onToggleCollectionExpand: (collectionId: string) => void
@@ -19,12 +21,14 @@ interface SidebarProps {
     onRenameItem: (collectionId: string, itemId: string, newName: string) => void
     onToggleItemExpand: (collectionId: string, itemId: string) => void
     onSelectRequest: (request: Request, requestId: string, collectionId: string) => void
+    onRunCollection: (collectionId: string) => void
 }
 
 export default function Sidebar({
     collections,
     currentRequestId,
     onAddCollection,
+    onAddFullCollection,
     onDeleteCollection,
     onRenameCollection,
     onToggleCollectionExpand,
@@ -36,6 +40,7 @@ export default function Sidebar({
     onToggleItemExpand,
     onSelectRequest,
     onMoveItem,
+    onRunCollection,
 }: SidebarProps) {
     const [editingCollection, setEditingCollection] = useState<string | null>(null)
     const [editName, setEditName] = useState('')
@@ -257,44 +262,74 @@ export default function Sidebar({
                         if (folderId) setEditingItemId(folderId)
                         setCollectionContextMenu(null)
                     }}
+                    onRunCollection={() => {
+                        onRunCollection(collectionContextMenu.collectionId)
+                        setCollectionContextMenu(null)
+                    }}
                 />
             )}
 
             {/* Import Modal */}
             {showImportModal && (
                 <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setShowImportModal(false)}>
-                    <div className="bg-bg-secondary border border-gray-700 rounded-lg p-6 w-[600px] max-w-[90vw]" onClick={(e) => e.stopPropagation()}>
+                    <div className="bg-bg-secondary border border-gray-700 rounded-lg p-6 w-[650px] max-w-[90vw]" onClick={(e) => e.stopPropagation()}>
                         <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
-                            <span>📥</span> Import from cURL
+                            <span>📥</span> Import
                         </h3>
 
-                        <div className="mb-4">
-                            <label className="block text-sm font-medium text-text-secondary mb-2">
-                                Target Collection
-                            </label>
-                            <select
-                                value={selectedCollectionId}
-                                onChange={(e) => setSelectedCollectionId(e.target.value)}
-                                className="w-full px-3 py-2 bg-bg-tertiary border border-gray-700 rounded focus:outline-none focus:ring-2 focus:ring-accent-secondary"
-                            >
-                                {collections.length === 0 && (
-                                    <option value="">No collections available</option>
+                        {/* Format indicator */}
+                        {curlInput.trim() && (
+                            <div className="mb-3 flex items-center gap-2 text-sm">
+                                {isSwaggerSpec(curlInput) ? (
+                                    <span className="px-2 py-1 bg-green-900/50 text-green-400 rounded">
+                                        ✓ Swagger/OpenAPI detected
+                                    </span>
+                                ) : curlInput.trim().toLowerCase().startsWith('curl') ? (
+                                    <span className="px-2 py-1 bg-blue-900/50 text-blue-400 rounded">
+                                        ✓ cURL command detected
+                                    </span>
+                                ) : (
+                                    <span className="px-2 py-1 bg-yellow-900/50 text-yellow-400 rounded">
+                                        ⚠ Unknown format
+                                    </span>
                                 )}
-                                {collections.map((col) => (
-                                    <option key={col.id} value={col.id}>{col.name}</option>
-                                ))}
-                            </select>
-                        </div>
+                            </div>
+                        )}
+
+                        {/* Target Collection - only for cURL */}
+                        {(!curlInput.trim() || !isSwaggerSpec(curlInput)) && (
+                            <div className="mb-4">
+                                <label className="block text-sm font-medium text-text-secondary mb-2">
+                                    Target Collection <span className="text-text-tertiary">(optional for cURL)</span>
+                                </label>
+                                <select
+                                    value={selectedCollectionId}
+                                    onChange={(e) => setSelectedCollectionId(e.target.value)}
+                                    className="w-full px-3 py-2 bg-bg-tertiary border border-gray-700 rounded focus:outline-none focus:ring-2 focus:ring-accent-secondary"
+                                >
+                                    <option value="">-- Create new collection --</option>
+                                    {collections.map((col) => (
+                                        <option key={col.id} value={col.id}>{col.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        )}
 
                         <div className="mb-4">
                             <label className="block text-sm font-medium text-text-secondary mb-2">
-                                Paste cURL Command
+                                Paste cURL command or Swagger/OpenAPI JSON
                             </label>
                             <textarea
                                 value={curlInput}
                                 onChange={(e) => setCurlInput(e.target.value)}
-                                placeholder={`curl -X POST https://api.example.com/users \\\\\n  -H "Content-Type: application/json" \\\\\n  -d '{"name": "John"}'`}
-                                className="w-full h-40 px-3 py-2 bg-bg-tertiary border border-gray-700 rounded font-mono text-sm focus:outline-none focus:ring-2 focus:ring-accent-secondary resize-none"
+                                placeholder={`curl -X POST https://api.example.com/users \\
+  -H "Content-Type: application/json" \\
+  -d '{"name": "John"}'
+
+--- or paste Swagger/OpenAPI JSON ---
+
+{"swagger": "2.0", "info": {...}, "paths": {...}}`}
+                                className="w-full h-48 px-3 py-2 bg-bg-tertiary border border-gray-700 rounded font-mono text-sm focus:outline-none focus:ring-2 focus:ring-accent-secondary resize-none"
                             />
                         </div>
 
@@ -307,22 +342,43 @@ export default function Sidebar({
                             </button>
                             <button
                                 onClick={() => {
-                                    if (!selectedCollectionId) {
-                                        alert('Please select a collection first')
+                                    const input = curlInput.trim()
+                                    if (!input) return
+
+                                    // Try Swagger/OpenAPI
+                                    if (isSwaggerSpec(input)) {
+                                        const result = parseSwagger(input)
+                                        if (result.success && result.collection) {
+                                            onAddFullCollection(result.collection)
+                                            setShowImportModal(false)
+                                            setCurlInput('')
+                                        } else {
+                                            alert(`Failed to parse Swagger: ${result.error}`)
+                                        }
                                         return
                                     }
 
-                                    const parsed = parseCurl(curlInput)
+                                    // Try cURL
+                                    const parsed = parseCurl(input)
                                     if (parsed && parsed.url) {
-                                        onImportRequest(selectedCollectionId, parsed)
+                                        if (selectedCollectionId) {
+                                            onImportRequest(selectedCollectionId, parsed)
+                                        } else {
+                                            // Create new collection with this request
+                                            const requestName = parsed.name || parsed.url?.split('/').pop() || 'Imported Request'
+                                            onAddCollection(requestName)
+                                            // Note: need to import into just-created collection
+                                            // For simplicity, we'll let user select after creation
+                                            alert('Collection created! Please select it and import again, or select an existing collection.')
+                                        }
                                         setShowImportModal(false)
                                         setCurlInput('')
                                     } else {
-                                        alert('Failed to parse cURL command. Please check the format.')
+                                        alert('Failed to parse. Please check the format (cURL or Swagger/OpenAPI JSON).')
                                     }
                                 }}
                                 className="px-4 py-2 bg-accent-primary hover:bg-accent-primary/80 text-white rounded transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                                disabled={!curlInput.trim() || !selectedCollectionId || collections.length === 0}
+                                disabled={!curlInput.trim()}
                             >
                                 Import
                             </button>

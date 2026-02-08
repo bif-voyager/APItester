@@ -16,3 +16,237 @@ body {
   width: 100vw;
   height: 100vh;
 }
+
+/* === Select dropdown options (native) === */
+select option {
+  background-color: #1e1e1e;
+  color: #e2e2e2;
+  padding: 8px 12px;
+}
+
+select option:hover,
+select option:checked {
+  background-color: #3b82f6;
+  color: white;
+}
+
+/* ========================================
+   LIGHT THEME - Comprehensive Overrides
+   ======================================== */
+
+[data-theme="light"] {
+  --light-bg-main: #f8f7f4;
+  --light-bg-sidebar: #f0efec;
+  --light-bg-card: #ffffff;
+  --light-bg-hover: #e8e7e3;
+  --light-text-primary: #1f1f1f;
+  --light-text-secondary: #555555;
+  --light-text-muted: #888888;
+  --light-border: #d4d2cb;
+  --light-accent-blue: #2563eb;
+  --light-accent-orange: #ea580c;
+  --light-selected-bg: #dbeafe;
+}
+
+/* === Main backgrounds === */
+[data-theme="light"] .bg-bg-primary {
+  background-color: var(--light-bg-main) !important;
+}
+
+[data-theme="light"] .bg-bg-secondary {
+  background-color: var(--light-bg-sidebar) !important;
+}
+
+[data-theme="light"] .bg-bg-tertiary {
+  background-color: var(--light-bg-hover) !important;
+}
+
+/* === Text colors === */
+[data-theme="light"] .text-text-primary,
+[data-theme="light"] h1,
+[data-theme="light"] h2,
+[data-theme="light"] h3 {
+  color: var(--light-text-primary) !important;
+}
+
+[data-theme="light"] .text-text-secondary {
+  color: var(--light-text-secondary) !important;
+}
+
+[data-theme="light"] .text-text-tertiary {
+  color: var(--light-text-muted) !important;
+}
+
+/* === Borders === */
+[data-theme="light"] .border-gray-700,
+[data-theme="light"] .border-gray-600 {
+  border-color: var(--light-border) !important;
+}
+
+/* === Hover states === */
+[data-theme="light"] .hover\:bg-bg-tertiary:hover,
+[data-theme="light"] .hover\:bg-bg-tertiary\/50:hover {
+  background-color: var(--light-bg-hover) !important;
+}
+
+[data-theme="light"] .hover\:bg-bg-primary:hover {
+  background-color: #efeee9 !important;
+}
+
+/* === Selected items (sidebar requests) === */
+[data-theme="light"] .bg-accent-secondary\/20,
+[data-theme="light"] [class*="bg-accent-secondary/"] {
+  background-color: var(--light-selected-bg) !important;
+}
+
+[data-theme="light"] .bg-accent-secondary {
+  background-color: var(--light-accent-blue) !important;
+}
+
+/* === Inputs and textareas === */
+[data-theme="light"] input,
+[data-theme="light"] textarea,
+[data-theme="light"] select {
+  background-color: var(--light-bg-card) !important;
+  color: var(--light-text-primary) !important;
+  border-color: var(--light-border) !important;
+}
+
+[data-theme="light"] input::placeholder,
+[data-theme="light"] textarea::placeholder {
+  color: #9ca3af !important;
+}
+
+[data-theme="light"] input:focus,
+[data-theme="light"] textarea:focus {
+  border-color: var(--light-accent-blue) !important;
+}
+
+/* === Buttons === */
+[data-theme="light"] button {
+  color: var(--light-text-primary);
+}
+
+[data-theme="light"] .bg-accent-primary {
+  background-color: var(--light-accent-orange) !important;
+  color: white !important;
+}
+
+[data-theme="light"] .hover\:bg-orange-600:hover {
+  background-color: #c2410c !important;
+}
+
+/* === Accent text colors === */
+[data-theme="light"] .text-accent-primary {
+  color: var(--light-accent-orange) !important;
+}
+
+[data-theme="light"] .text-accent-secondary {
+  color: var(--light-accent-blue) !important;
+}
+
+/* === Dropdowns and menus === */
+[data-theme="light"] [class*="shadow-lg"] {
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06) !important;
+}
+
+/* === Error states === */
+[data-theme="light"] .bg-red-500\/10,
+[data-theme="light"] [class*="bg-red-"] {
+  background-color: #fef2f2 !important;
+}
+
+[data-theme="light"] .text-red-400,
+[data-theme="light"] .text-red-500 {
+  color: #dc2626 !important;
+}
+
+/* === Code/JSON editor area === */
+[data-theme="light"] pre,
+[data-theme="light"] code {
+  background-color: var(--light-bg-card) !important;
+  color: var(--light-text-primary) !important;
+}
+
+/* === Method badges (keep original colors) === */
+[data-theme="light"] .bg-green-500 {
+  background-color: #22c55e !important;
+}
+
+[data-theme="light"] .bg-orange-500 {
+  background-color: #f97316 !important;
+}
+
+[data-theme="light"] .bg-blue-500 {
+  background-color: #3b82f6 !important;
+}
+
+[data-theme="light"] .bg-red-500 {
+  background-color: #ef4444 !important;
+}
+
+[data-theme="light"] .bg-purple-500 {
+  background-color: #a855f7 !important;
+}
+
+/* === Method text colors (sidebar) === */
+[data-theme="light"] .text-green-500 {
+  color: #22c55e !important;
+}
+
+[data-theme="light"] .text-green-400 {
+  color: #4ade80 !important;
+}
+
+[data-theme="light"] .text-orange-400 {
+  color: #fb923c !important;
+}
+
+[data-theme="light"] .text-orange-500 {
+  color: #f97316 !important;
+}
+
+[data-theme="light"] .text-blue-400 {
+  color: #60a5fa !important;
+}
+
+[data-theme="light"] .text-blue-500 {
+  color: #3b82f6 !important;
+}
+
+[data-theme="light"] .text-purple-400 {
+  color: #c084fc !important;
+}
+
+[data-theme="light"] .text-purple-500 {
+  color: #a855f7 !important;
+}
+
+/* === Scrollbars === */
+[data-theme="light"] ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+[data-theme="light"] ::-webkit-scrollbar-track {
+  background: var(--light-bg-sidebar);
+}
+
+[data-theme="light"] ::-webkit-scrollbar-thumb {
+  background: #c5c3bc;
+  border-radius: 4px;
+}
+
+[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
+  background: #a8a59e;
+}
+
+/* === Tabs === */
+[data-theme="light"] .border-accent-primary {
+  border-color: var(--light-accent-orange) !important;
+}
+
+/* === Checkbox/radio === */
+[data-theme="light"] input[type="checkbox"] {
+  accent-color: var(--light-accent-blue);
+}

@@ -63,12 +63,22 @@ export default function ResponseViewer({ response }: ResponseViewerProps) {
             {/* Response Header */}
             <div className="mb-4 flex items-center justify-between">
                 <h3 className="text-lg font-bold">Response</h3>
-                <div className="flex items-center gap-4 text-sm">
-                    <span className={`font-bold ${getStatusColor(response.status!)}`}>
-                        {response.status} {response.statusText}
-                    </span>
-                    <span className="text-text-tertiary">|</span>
-                    <span className="text-text-secondary">{response.time}ms</span>
+                <div className="flex items-center gap-6">
+                    <div className="flex items-center gap-2 bg-bg-primary px-3 py-1 rounded border border-gray-700">
+                        <span className={`text-lg font-bold ${getStatusColor(response.status!)}`}>
+                            {response.status} {response.statusText}
+                        </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <span className="text-xs text-text-tertiary uppercase font-bold tracking-wider">Time:</span>
+                        <span className="text-sm font-semibold text-text-secondary">{response.time} ms</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <span className="text-xs text-text-tertiary uppercase font-bold tracking-wider">Size:</span>
+                        <span className="text-sm font-semibold text-text-secondary">
+                            {new TextEncoder().encode(JSON.stringify(response.body)).length} B
+                        </span>
+                    </div>
                 </div>
             </div>
 

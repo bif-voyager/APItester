@@ -2,7 +2,7 @@ import { Request } from '../types';
 
 /**
  * Parses a cURL command and extracts request information
- * Handles single/double quotes, multiline JSON, and various cURL formats
+ * Handles single/double quotes, multiline JSON, auth, form-data, and various cURL formats
  */
 export function parseCurl(curlCommand: string): Partial<Request> | null {
     try {
@@ -63,14 +63,88 @@ export function parseCurl(curlCommand: string): Partial<Request> | null {
                 const key = headerContent.substring(0, colonIndex).trim();
                 const value = headerContent.substring(colonIndex + 1).trim();
                 if (key && value) {
-                    request.headers!.push({ key, value, enabled: true });
+                    // Check for Authorization header and extract auth info
+                    if (key.toLowerCase() === 'authorization') {
+                        if (value.toLowerCase().startsWith('bearer ')) {
+                            request.auth = {
+                                type: 'bearer',
+                                bearerToken: value.substring(7).trim(),
+                            };
+                        } else if (value.toLowerCase().startsWith('basic ')) {
+                            // Decode basic auth if possible
+                            try {
+                                const decoded = atob(value.substring(6).trim());
+                                const [username, password] = decoded.split(':');
+                                request.auth = {
+                                    type: 'basic',
+                                    basicUsername: username,
+                                    basicPassword: password || '',
+                                };
+                            } catch {
+                                // Keep as header if decoding fails
+                                request.headers!.push({ key, value, enabled: true });
+                            }
+                        } else {
+                            request.headers!.push({ key, value, enabled: true });
+                        }
+                    } else {
+                        request.headers!.push({ key, value, enabled: true });
+                    }
                 }
             }
         }
 
-        // Extract body data (-d, --data, --data-raw, --data-binary)
-        // This regex captures content between quotes, handling multiline JSON
-        const dataRegex = /(?:-d|--data|--data-raw|--data-binary)\s+(['"])([\s\S]*?)\1/g;
+        // Extract Basic Auth (-u or --user)
+        const userMatch = normalized.match(/(?:-u|--user)\s+['"]?([^'"\s]+)['"]?/);
+        if (userMatch) {
+            const [username, password] = userMatch[1].split(':');
+            request.auth = {
+                type: 'basic',
+                basicUsername: username,
+                basicPassword: password || '',
+            };
+        }
+
+        // Extract cookies (-b or --cookie)
+        const cookieMatch = normalized.match(/(?:-b|--cookie)\s+(['"])([^'"]+)\1/);
+        if (cookieMatch) {
+            request.headers!.push({ key: 'Cookie', value: cookieMatch[2], enabled: true });
+        }
+
+        // Extract form data (-F or --form) for multipart
+        const formRegex = /(?:-F|--form)\s+(['"])([^'"]+)\1/g;
+        const formData: string[] = [];
+        let formMatch;
+        while ((formMatch = formRegex.exec(normalized)) !== null) {
+            formData.push(formMatch[2]);
+        }
+
+        if (formData.length > 0) {
+            // Convert form data to JSON-like body for display
+            const formBody: Record<string, string> = {};
+            for (const item of formData) {
+                const eqIndex = item.indexOf('=');
+                if (eqIndex > -1) {
+                    const key = item.substring(0, eqIndex);
+                    const value = item.substring(eqIndex + 1).replace(/^@/, '[file] '); // Mark file uploads
+                    formBody[key] = value;
+                }
+            }
+            request.body = JSON.stringify(formBody, null, 2);
+
+            // Add Content-Type header for multipart if not present
+            const hasContentType = request.headers!.some(h => h.key.toLowerCase() === 'content-type');
+            if (!hasContentType) {
+                request.headers!.push({ key: 'Content-Type', value: 'multipart/form-data', enabled: true });
+            }
+
+            if (!methodMatch) {
+                request.method = 'POST';
+            }
+        }
+
+        // Extract body data (-d, --data, --data-raw, --data-binary, --data-urlencode)
+        const dataRegex = /(?:-d|--data|--data-raw|--data-binary|--data-urlencode)\s+(['"])([\s\S]*?)\1/g;
         const dataMatches: string[] = [];
         let dataMatch;
 
@@ -78,16 +152,47 @@ export function parseCurl(curlCommand: string): Partial<Request> | null {
             dataMatches.push(dataMatch[2]);
         }
 
-        if (dataMatches.length > 0) {
-            const bodyContent = dataMatches.join('&');
+        // Also try unquoted data (for simple key=value)
+        const unquotedDataMatch = normalized.match(/(?:-d|--data)\s+([^\s'"]+)/);
+        if (unquotedDataMatch && dataMatches.length === 0) {
+            dataMatches.push(unquotedDataMatch[1]);
+        }
+
+        if (dataMatches.length > 0 && !formData.length) {
+            let bodyContent = dataMatches.join('&');
 
             // Try to parse and prettify JSON
             try {
                 const parsed = JSON.parse(bodyContent);
                 request.body = JSON.stringify(parsed, null, 2);
+
+                // Add Content-Type if not present
+                const hasContentType = request.headers!.some(h => h.key.toLowerCase() === 'content-type');
+                if (!hasContentType) {
+                    request.headers!.push({ key: 'Content-Type', value: 'application/json', enabled: true });
+                }
             } catch {
-                // Not JSON, keep as is
-                request.body = bodyContent;
+                // Check if it's URL-encoded form data
+                if (bodyContent.includes('=') && !bodyContent.startsWith('{')) {
+                    // URL-encoded form data - parse it
+                    try {
+                        const params = new URLSearchParams(bodyContent);
+                        const formBody: Record<string, string> = {};
+                        params.forEach((value, key) => {
+                            formBody[key] = value;
+                        });
+                        request.body = JSON.stringify(formBody, null, 2);
+                    } catch {
+                        request.body = bodyContent;
+                    }
+
+                    const hasContentType = request.headers!.some(h => h.key.toLowerCase() === 'content-type');
+                    if (!hasContentType) {
+                        request.headers!.push({ key: 'Content-Type', value: 'application/x-www-form-urlencoded', enabled: true });
+                    }
+                } else {
+                    request.body = bodyContent;
+                }
             }
 
             // If we have data and no method specified, it's likely POST
@@ -107,9 +212,21 @@ export function parseCurl(curlCommand: string): Partial<Request> | null {
                 request.params = params;
 
                 // Remove query string from URL
-                request.url = request.url.split('?')[0];
+                request.url = urlObj.origin + urlObj.pathname;
             } catch (e) {
                 // Invalid URL, keep as is
+            }
+        }
+
+        // Generate smart request name from URL
+        if (request.url) {
+            try {
+                const urlObj = new URL(request.url);
+                const pathParts = urlObj.pathname.split('/').filter(p => p);
+                const lastPart = pathParts[pathParts.length - 1] || urlObj.hostname;
+                request.name = `${request.method} ${lastPart}`;
+            } catch {
+                request.name = `${request.method} Request`;
             }
         }
 
@@ -119,3 +236,4 @@ export function parseCurl(curlCommand: string): Partial<Request> | null {
         return null;
     }
 }
+

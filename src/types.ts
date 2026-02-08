@@ -12,6 +12,16 @@ export interface Request {
     params: KeyValue[]
     headers: KeyValue[]
     body: string
+    auth?: Auth
+}
+
+export type AuthType = 'none' | 'bearer' | 'basic'
+
+export interface Auth {
+    type: AuthType
+    bearerToken?: string
+    basicUsername?: string
+    basicPassword?: string
 }
 
 export type CollectionItem = {
@@ -43,4 +53,16 @@ export interface Response {
     loading?: boolean
     error?: boolean
     message?: string
+}
+
+export interface EnvironmentVariable {
+    key: string
+    value: string
+    enabled: boolean
+}
+
+export interface Environment {
+    id: string
+    name: string
+    variables: EnvironmentVariable[]
 }
