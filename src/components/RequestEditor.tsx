@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Request, KeyValue } from '../types'
 import EditableJsonViewer from './EditableJsonViewer'
 import MethodDropdown from './MethodDropdown'
+import { getDefaultHeadersForMethod } from '../utils/httpHelpers'
 
 interface RequestEditorProps {
     request: Request | null
@@ -41,24 +42,7 @@ export default function RequestEditor({
         onUpdateRequest({ ...request, ...updates })
     }
 
-    // Helper function to get default headers based on HTTP method
-    const getDefaultHeadersForMethod = (method: string): KeyValue[] => {
-        const baseHeaders: KeyValue[] = [
-            { key: 'User-Agent', value: 'APIClient/1.0', enabled: true },
-            { key: 'Accept', value: '*/*', enabled: true },
-            { key: 'Accept-Encoding', value: 'gzip, deflate, br', enabled: true },
-            { key: 'Connection', value: 'keep-alive', enabled: true },
-        ]
 
-        if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
-            return [
-                { key: 'Content-Type', value: 'application/json', enabled: true },
-                ...baseHeaders,
-            ]
-        }
-
-        return baseHeaders
-    }
 
     // Handler for method changes - updates headers automatically
     const handleMethodChange = (newMethod: string) => {

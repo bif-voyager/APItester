@@ -66,3 +66,14 @@ export interface Environment {
     name: string
     variables: EnvironmentVariable[]
 }
+
+export interface HistoryItem {
+    id: string
+    timestamp: number
+    request: Request
+    response?: {
+        status?: number
+        statusText?: string
+        time?: number
+    }
+}

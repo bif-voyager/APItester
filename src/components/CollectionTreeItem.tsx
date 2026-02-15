@@ -15,8 +15,9 @@ interface CollectionTreeItemProps {
     onRename: (itemId: string, newName: string) => void;
     onDelete: (itemId: string) => void;
     onAddRequest: (parentId: string) => void;
-    onAddFolder: (parentId: string) => void;
-    onMoveItem: (collectionId: string, sourceItemId: string, targetItemId: string | null) => void;
+    onAddFolder: (parentId: string | null) => void;
+    onMoveItem: (collectionId: string, sourceItemId: string, targetItemId: string | null, sourceCollectionId: string | null) => void;
+    searchTerm: string;
 }
 
 export default function CollectionTreeItem({
@@ -34,6 +35,7 @@ export default function CollectionTreeItem({
     onAddRequest,
     onAddFolder,
     onMoveItem,
+    searchTerm = '',
 }: CollectionTreeItemProps) {
     const [editName, setEditName] = useState(item.name);
     const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
@@ -59,6 +61,17 @@ export default function CollectionTreeItem({
             PATCH: 'bg-purple-500',
         };
         return colors[method] || 'bg-gray-500';
+    };
+
+    const renderHighlightedText = (text: string) => {
+        if (!searchTerm) return text;
+
+        const parts = text.split(new RegExp(`(${searchTerm})`, 'gi'));
+        return parts.map((part, i) =>
+            part.toLowerCase() === searchTerm.toLowerCase() ?
+                <span key={i} className="bg-yellow-500/50 text-white rounded px-0.5">{part}</span> :
+                part
+        );
     };
 
     const [isDragOver, setIsDragOver] = useState(false);
@@ -88,8 +101,12 @@ export default function CollectionTreeItem({
         const sourceId = e.dataTransfer.getData('sourceId');
         const sourceColId = e.dataTransfer.getData('collectionId');
 
-        if (sourceColId === collectionId && sourceId !== item.id) {
-            onMoveItem(collectionId, sourceId, item.id);
+        // Allow move if source is different or collection is different
+        if (sourceId !== item.id) {
+            // Pass sourceCollectionId as 4th argument if needed, or handle in App.tsx
+            // Current signature: onMoveItem(collectionId, sourceItemId, targetItemId)
+            // We need to change signature to support cross-collection
+            onMoveItem(collectionId, sourceId, item.id, sourceColId || null);
         }
     };
 
@@ -162,7 +179,7 @@ export default function CollectionTreeItem({
                             className="text-sm flex-1 cursor-pointer"
                             onDoubleClick={() => onStartEdit && onStartEdit(item.id)}
                         >
-                            {item.name}
+                            {renderHighlightedText(item.name)}
                         </span>
                     )}
 
@@ -207,6 +224,7 @@ export default function CollectionTreeItem({
                                     onAddRequest={onAddRequest}
                                     onAddFolder={onAddFolder}
                                     onMoveItem={onMoveItem}
+                                    searchTerm={searchTerm}
                                 />
                             ))}
                     </div>
@@ -293,7 +311,7 @@ export default function CollectionTreeItem({
                                 if (onStartEdit) onStartEdit(item.id);
                             }}
                         >
-                            {item.name}
+                            {renderHighlightedText(item.name)}
                         </span>
                     )}
                 </button>

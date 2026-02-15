@@ -5,7 +5,15 @@ interface ResponseViewerProps {
     response: Response | null
 }
 
+import { useState } from 'react'
+
+interface ResponseViewerProps {
+    response: Response | null
+}
+
 export default function ResponseViewer({ response }: ResponseViewerProps) {
+    const [searchText, setSearchText] = useState('')
+
     if (!response) {
         return (
             <div className="flex-1 flex items-center justify-center text-text-tertiary p-8">
@@ -61,8 +69,36 @@ export default function ResponseViewer({ response }: ResponseViewerProps) {
     return (
         <div className="flex-1 flex flex-col p-6">
             {/* Response Header */}
-            <div className="mb-4 flex items-center justify-between">
-                <h3 className="text-lg font-bold">Response</h3>
+            <div className="mb-4 flex items-center justify-between gap-4">
+                <div className="flex items-center gap-4 flex-1">
+                    <h3 className="text-lg font-bold">Response</h3>
+                    {/* Search Input */}
+                    <div className="relative flex-1 max-w-md">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <svg className="h-4 w-4 text-text-tertiary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                            </svg>
+                        </div>
+                        <input
+                            type="text"
+                            placeholder="Search in response..."
+                            value={searchText}
+                            onChange={(e) => setSearchText(e.target.value)}
+                            className="w-full bg-bg-tertiary border border-gray-700 rounded-md py-1.5 pl-10 pr-8 text-sm focus:outline-none focus:ring-1 focus:ring-accent-primary focus:border-accent-primary transition-all placeholder-text-tertiary"
+                        />
+                        {searchText && (
+                            <button
+                                onClick={() => setSearchText('')}
+                                className="absolute inset-y-0 right-0 pr-2 flex items-center text-text-tertiary hover:text-text-primary"
+                            >
+                                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
+                        )}
+                    </div>
+                </div>
+
                 <div className="flex items-center gap-6">
                     <div className="flex items-center gap-2 bg-bg-primary px-3 py-1 rounded border border-gray-700">
                         <span className={`text-lg font-bold ${getStatusColor(response.status!)}`}>
@@ -85,7 +121,7 @@ export default function ResponseViewer({ response }: ResponseViewerProps) {
             {/* Response Body */}
             <div className="flex-1 bg-bg-tertiary border border-gray-700 rounded overflow-hidden">
                 <div className="h-full overflow-auto p-4">
-                    <JsonViewer json={formatJson(response.body)} />
+                    <JsonViewer json={formatJson(response.body)} searchText={searchText} />
                 </div>
             </div>
         </div>

@@ -208,9 +208,28 @@ export function moveItemInTree(
     }
 }
 
+// Add item to tree at specific position (relative to targetId)
+export function addItemToTreeAtPosition(
+    items: CollectionItem[],
+    itemToAdd: CollectionItem,
+    targetId: string | null
+): CollectionItem[] {
+    if (!targetId) {
+        return [...items, itemToAdd];
+    }
+
+    const targetItem = findItemInTree(items, targetId);
+    if (!targetItem) return items;
+
+    if (targetItem.type === 'folder') {
+        return addExistingItemToTree(items, targetId, itemToAdd);
+    } else {
+        return insertItemBeforeSibling(items, targetId, itemToAdd);
+    }
+}
 
 // Helper to add existing item to specific parent (Nesting)
-function addExistingItemToTree(
+export function addExistingItemToTree(
     items: CollectionItem[],
     parentId: string,
     itemToAdd: CollectionItem
@@ -234,7 +253,7 @@ function addExistingItemToTree(
 }
 
 // Helper to insert item before a sibling (Reordering)
-function insertItemBeforeSibling(
+export function insertItemBeforeSibling(
     items: CollectionItem[],
     siblingId: string,
     itemToAdd: CollectionItem
