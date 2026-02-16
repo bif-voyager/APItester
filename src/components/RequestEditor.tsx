@@ -17,6 +17,7 @@ export default function RequestEditor({
 }: RequestEditorProps) {
     const [activeTab, setActiveTab] = useState('params')
     const [openDropdown, setOpenDropdown] = useState<number | null>(null)
+    const [urlFocused, setUrlFocused] = useState(false)
 
     const commonHeaders = [
         'Accept', 'Accept-Charset', 'Accept-Encoding', 'Accept-Language',
@@ -98,26 +99,31 @@ export default function RequestEditor({
 
                 {/* URL Input with variable highlighting */}
                 <div className="flex-1 relative">
-                    {/* Highlight overlay - shows all text with colored variables */}
-                    <div
-                        className="absolute inset-0 px-4 py-2 text-sm pointer-events-none overflow-hidden whitespace-nowrap flex items-center"
-                        aria-hidden="true"
-                    >
-                        {request.url.split(/(\{[^}]+\})/).map((part, i) =>
-                            part.match(/^\{[^}]+\}$/) ? (
-                                <span key={i} className="text-orange-400">{part}</span>
-                            ) : (
-                                <span key={i} className="text-text-primary">{part}</span>
-                            )
-                        )}
-                    </div>
-                    {/* Invisible input for editing */}
+                    {/* Highlight overlay - shows all text with colored variables, hidden during selection */}
+                    {!urlFocused && (
+                        <div
+                            className="absolute inset-0 px-4 py-2 text-sm pointer-events-none overflow-hidden whitespace-nowrap flex items-center"
+                            aria-hidden="true"
+                        >
+                            {request.url.split(/(\{[^}]+\})/).map((part, i) =>
+                                part.match(/^\{[^}]+\}$/) ? (
+                                    <span key={i} className="text-orange-400">{part}</span>
+                                ) : (
+                                    <span key={i} className="text-text-primary">{part}</span>
+                                )
+                            )}
+                        </div>
+                    )}
+                    {/* Input - transparent text when overlay visible, normal text when focused */}
                     <input
                         type="text"
                         value={request.url}
                         onChange={(e) => updateRequest({ url: e.target.value })}
+                        onKeyDown={(e) => { if (e.key === 'Enter') onSendRequest(request) }}
+                        onFocus={() => setUrlFocused(true)}
+                        onBlur={() => setUrlFocused(false)}
                         placeholder="Enter request URL (e.g., {baseUrl}/users)"
-                        className="w-full px-4 py-2 bg-bg-tertiary border border-gray-600 rounded focus:outline-none focus:border-accent-secondary text-sm text-transparent caret-white"
+                        className={`w-full px-4 py-2 bg-bg-tertiary border border-gray-600 rounded focus:outline-none focus:border-accent-secondary text-sm caret-white ${urlFocused ? 'text-text-primary' : 'text-transparent'}`}
                     />
                 </div>
 

@@ -1,4 +1,4 @@
-import { Collection, Request, CollectionItem } from '../types'
+import { Collection, Request, CollectionItem, Tab } from '../types'
 import { useState } from 'react'
 import { parseCurl } from '../utils/curlParser'
 import { isSwaggerSpec, parseSwagger } from '../utils/swaggerParser'
@@ -27,8 +27,10 @@ interface SidebarProps {
     standaloneRequests?: Request[]
     onSelectStandaloneRequest?: (request: Request) => void
     onDeleteStandaloneRequest?: (requestId: string) => void
+    onRenameStandaloneRequest?: (requestId: string, newName: string) => void
     user?: { name: string; mode: 'user' | 'guest' } | null
     onLogout?: () => void
+    openTabs?: Tab[]
 }
 
 export default function Sidebar({
@@ -53,8 +55,10 @@ export default function Sidebar({
     standaloneRequests = [],
     onSelectStandaloneRequest,
     onDeleteStandaloneRequest,
+    onRenameStandaloneRequest,
     user,
     onLogout,
+    openTabs = [],
 }: SidebarProps) {
     const [editingCollection, setEditingCollection] = useState<string | null>(null)
     const [editName, setEditName] = useState('')
@@ -70,6 +74,7 @@ export default function Sidebar({
         y: number
     } | null>(null)
     const [searchTerm, setSearchTerm] = useState('')
+    const [editingStandaloneId, setEditingStandaloneId] = useState<string | null>(null)
     const [showAddCollectionMenu, setShowAddCollectionMenu] = useState(false)
 
     const filterCollections = (collections: Collection[], term: string): Collection[] => {
@@ -398,6 +403,7 @@ export default function Sidebar({
                                                     if (folderId) setEditingItemId(folderId)
                                                 }}
                                                 searchTerm={searchTerm}
+                                                openTabs={openTabs}
                                             />
                                         ))}
                                     </div>
@@ -408,35 +414,69 @@ export default function Sidebar({
                 )}
 
                 {/* Standalone Requests (without collection) */}
-                {standaloneRequests.map((req) => (
-                    <div
-                        key={req.id}
-                        className={`mb-1 flex items-center gap-2 p-2 rounded text-sm cursor-pointer group hover:bg-bg-tertiary/50 transition-all duration-150 border-2 ${currentRequestId === req.id ? 'bg-accent-secondary/20 border-accent-secondary/40' : 'border-transparent'}`}
-                        onClick={() => onSelectStandaloneRequest?.(req)}
-                        draggable={true}
-                        onDragStart={(e) => {
-                            e.dataTransfer.setData('sourceId', req.id)
-                            e.dataTransfer.setData('collectionId', '') // Empty string for standalone
-                            e.dataTransfer.effectAllowed = 'move'
-                        }}
-                    >
-                        <span className={`font-bold text-[10px] px-1.5 py-0.5 rounded text-center select-none flex-shrink-0 ${req.method === 'GET' ? 'bg-green-500/20 text-green-400' :
-                            req.method === 'POST' ? 'bg-orange-500/20 text-orange-400' :
-                                req.method === 'PUT' ? 'bg-blue-500/20 text-blue-400' :
-                                    req.method === 'DELETE' ? 'bg-red-500/20 text-red-400' :
-                                        'bg-purple-500/20 text-purple-400'
-                            }`}>{req.method}</span>
-                        <span className="flex-1 truncate text-text-secondary">{req.name}</span>
-                        <button
-                            onClick={(e) => { e.stopPropagation(); onDeleteStandaloneRequest?.(req.id) }}
-                            className="opacity-0 group-hover:opacity-100 text-text-tertiary hover:text-red-400 p-0.5"
+                {standaloneRequests.map((req) => {
+                    const isEditingSR = editingStandaloneId === req.id;
+                    return (
+                        <div
+                            key={req.id}
+                            className={`mb-1 flex items-center gap-2 p-2 rounded text-sm cursor-pointer group hover:bg-bg-tertiary/50 transition-all duration-150 border-2 ${currentRequestId === req.id ? 'bg-accent-secondary/20 border-accent-secondary/40' : 'border-transparent'}`}
+                            onClick={() => !isEditingSR && onSelectStandaloneRequest?.(req)}
+                            draggable={!isEditingSR}
+                            onDragStart={(e) => {
+                                e.dataTransfer.setData('sourceId', req.id)
+                                e.dataTransfer.setData('collectionId', '') // Empty string for standalone
+                                e.dataTransfer.effectAllowed = 'move'
+                            }}
                         >
-                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                        </button>
-                    </div>
-                ))}
+                            <span className={`font-bold text-[10px] px-1.5 py-0.5 rounded text-center select-none flex-shrink-0 ${req.method === 'GET' ? 'bg-green-500/20 text-green-400' :
+                                req.method === 'POST' ? 'bg-orange-500/20 text-orange-400' :
+                                    req.method === 'PUT' ? 'bg-blue-500/20 text-blue-400' :
+                                        req.method === 'DELETE' ? 'bg-red-500/20 text-red-400' :
+                                            'bg-purple-500/20 text-purple-400'
+                                }`}>{req.method}</span>
+                            {isEditingSR ? (
+                                <input
+                                    type="text"
+                                    defaultValue={req.name}
+                                    autoFocus
+                                    className="flex-1 px-2 py-0.5 bg-bg-tertiary border border-accent-secondary rounded text-xs focus:outline-none"
+                                    onBlur={(e) => {
+                                        const newName = e.target.value.trim();
+                                        if (newName && newName !== req.name) {
+                                            onRenameStandaloneRequest?.(req.id, newName);
+                                        }
+                                        setEditingStandaloneId(null);
+                                    }}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            (e.target as HTMLInputElement).blur();
+                                        }
+                                        if (e.key === 'Escape') {
+                                            setEditingStandaloneId(null);
+                                        }
+                                    }}
+                                    onClick={(e) => e.stopPropagation()}
+                                />
+                            ) : (
+                                <span
+                                    className="flex-1 truncate text-text-secondary"
+                                    onDoubleClick={(e) => {
+                                        e.stopPropagation();
+                                        setEditingStandaloneId(req.id);
+                                    }}
+                                >{req.name}</span>
+                            )}
+                            <button
+                                onClick={(e) => { e.stopPropagation(); onDeleteStandaloneRequest?.(req.id) }}
+                                className="opacity-0 group-hover:opacity-100 text-text-tertiary hover:text-red-400 p-0.5"
+                            >
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
+                        </div>
+                    );
+                })}
             </div>
 
             {/* Collection Context Menu */}

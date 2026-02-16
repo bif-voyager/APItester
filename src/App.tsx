@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 
 import Sidebar from './components/Sidebar'
 import RequestEditor from './components/RequestEditor'
@@ -9,7 +9,7 @@ import ConfirmDialog, { ConfirmDialogProps } from './components/ConfirmDialog'
 import SaveRequestDialog from './components/SaveRequestDialog'
 import { db, useUserEnvironments, useUserCollections, useUserRequests } from './db/db'
 import { buildCollectionTree, uiRequestToDbRequest, saveCollectionToDb } from './db/dbConverters'
-import type { Collection, CollectionItem, Request, Response, Environment, EnvironmentVariable, HistoryItem } from './types'
+import type { Collection, CollectionItem, Request, Response, Environment, EnvironmentVariable, HistoryItem, Tab, RunResult } from './types'
 import {
     generateId,
     // findItemInTree,
@@ -152,41 +152,31 @@ function App() {
         return localStorage.getItem('api-client-env-id') || null
     })
     const [showEnvModal, setShowEnvModal] = useState(false)
+    const [envDropdownOpen, setEnvDropdownOpen] = useState(false)
+    const envDropdownRef = useRef<HTMLDivElement>(null)
+
+    // Close env dropdown when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (envDropdownRef.current && !envDropdownRef.current.contains(event.target as Node)) {
+                setEnvDropdownOpen(false)
+            }
+        }
+        document.addEventListener('mousedown', handleClickOutside)
+        return () => document.removeEventListener('mousedown', handleClickOutside)
+    }, [])
     const [isAddingEnv, setIsAddingEnv] = useState(false)
     const [newEnvName, setNewEnvName] = useState('')
     const [confirmDialog, setConfirmDialog] = useState<Omit<ConfirmDialogProps, 'onCancel'> | null>(null)
     const [showSaveDialog, setShowSaveDialog] = useState(false)
 
     // Run Collection state
-    interface RunResult {
-        request: Request
-        status: 'pending' | 'running' | 'passed' | 'failed'
-        responseStatus?: number
-        responseTime?: number
-        error?: string
-        iteration?: number
-    }
     const [runResults, setRunResults] = useState<RunResult[]>([])
     const [showRunnerConfig, setShowRunnerConfig] = useState(false)
     const [runnerInitialItems, setRunnerInitialItems] = useState<CollectionItem[] | undefined>(undefined)
 
 
     // Tabs state
-    interface Tab {
-        id: string
-        type: 'request' | 'run'
-        title: string
-        request?: Request
-        requestId?: string
-        collectionId?: string
-        runResults?: RunResult[]
-        runCollectionName?: string
-        response?: Response | null
-        lastRunnerConfig?: {
-            config: RunnerConfig
-            requests: Request[]
-        }
-    }
     const [openTabs, setOpenTabs] = useState<Tab[]>([])
     const [activeTabId, setActiveTabId] = useState<string | null>(null)
 
@@ -480,6 +470,8 @@ function App() {
                         await db.deleteCollectionRecursive(user.id, id)
                     } else {
                         await db.deleteRequest(user.id, id)
+                        // Close tab if open
+                        setOpenTabs(prev => prev.filter(t => t.requestId !== itemId && t.request?.id !== itemId))
                     }
                     if (currentRequestId === itemId) {
                         setCurrentRequest(null)
@@ -502,6 +494,13 @@ function App() {
             if (currentRequestId === itemId && currentRequest) {
                 setCurrentRequest({ ...currentRequest, name: newName })
             }
+
+            // Update open tabs
+            setOpenTabs(prev => prev.map(t =>
+                (t.requestId === itemId || t.request?.id === itemId)
+                    ? { ...t, title: newName, request: t.request ? { ...t.request, name: newName } : undefined }
+                    : t
+            ))
         }
     }
 
@@ -517,19 +516,26 @@ function App() {
     }
 
     const selectRequest = (request: Request, requestId: string, collectionId: string) => {
-        setCurrentRequest(request)
+        // Construct tab ID first
+        const tabId = `request-${requestId}`
+        // Check if tab is already open with potentially unsaved changes
+        const existingTab = openTabs.find(t => t.id === tabId)
+
+        // Use existing tab's request state if available to preserve edits
+        // Otherwise use the fresh request from DB/Sidebar
+        const requestToUse = (existingTab && existingTab.request) ? existingTab.request : request
+
+        setCurrentRequest(requestToUse)
         setCurrentRequestId(requestId)
         setCurrentCollectionId(collectionId)
 
-        // Add or activate tab
-        const tabId = `request - ${requestId} `
-        const existingTab = openTabs.find(t => t.id === tabId)
+        // Add tab if not exists
         if (!existingTab) {
             const newTab: Tab = {
                 id: tabId,
                 type: 'request',
                 title: request.name,
-                request,
+                request: request,
                 requestId,
                 collectionId,
                 response: null
@@ -596,16 +602,25 @@ function App() {
     }
 
     const sendRequest = async (request: Request) => {
-        const tabId = `request - ${request.id} `
+        // Find tab by requestId match (works for both standalone and collection tabs)
+        const findTab = (t: Tab) => t.requestId === request.id || t.request?.id === request.id
 
         try {
             setOpenTabs(prev => prev.map(t =>
-                t.id === tabId ? { ...t, response: { loading: true } } : t
+                findTab(t) ? { ...t, response: { loading: true } } : t
             ))
 
             // Build URL with params (only enabled ones)
             // Apply environment variable substitution
-            const url = new URL(substituteVariables(request.url))
+            let rawUrl = substituteVariables(request.url).trim()
+            if (!rawUrl) {
+                throw new Error('Invalid URL')
+            }
+            // Auto-detect protocol: if URL doesn't start with http:// or https://, add https://
+            if (!rawUrl.startsWith('http://') && !rawUrl.startsWith('https://')) {
+                rawUrl = 'https://' + rawUrl
+            }
+            const url = new URL(rawUrl)
             request.params
                 .filter((param) => param.enabled !== false && param.key)
                 .forEach((param) => {
@@ -659,6 +674,22 @@ function App() {
             const elapsed = Math.round(performance.now() - startTime)
 
             const data = await response.text()
+
+            // Detect CORS proxy errors (proxy returns HTML error pages for failed connections)
+            if (isCrossOrigin && !response.ok && typeof data === 'string' && data.includes('<')) {
+                // The proxy returned an HTML error page — the target server was unreachable
+                const isProxyError = data.includes('Cloudflare') ||
+                    data.includes('ENOTFOUND') ||
+                    data.includes('ECONNREFUSED') ||
+                    data.includes('error') ||
+                    response.status === 403 ||
+                    response.status === 502 ||
+                    response.status === 503
+                if (isProxyError) {
+                    throw new Error(`Could not send request — server "${url.hostname}" not found or unreachable`)
+                }
+            }
+
             let jsonData = null
             try {
                 jsonData = JSON.parse(data)
@@ -675,7 +706,7 @@ function App() {
             }
 
             setOpenTabs(prev => prev.map(t =>
-                t.id === tabId ? { ...t, response: responseData } : t
+                findTab(t) ? { ...t, response: responseData } : t
             ))
 
             // Add to history
@@ -691,8 +722,17 @@ function App() {
             }
             setHistory(prev => [historyItem, ...prev])
         } catch (error: any) {
+            // Normalize URL-related errors to a clear 'Invalid URL' message
+            const isUrlError = error instanceof TypeError && (
+                error.message.includes('Invalid URL') ||
+                error.message.includes('URL') ||
+                error.message.includes('URI')
+            )
+            const message = isUrlError || error.message === 'Invalid URL'
+                ? 'Invalid URL'
+                : error.message
             setOpenTabs(prev => prev.map(t =>
-                t.id === tabId ? { ...t, response: { error: true, message: error.message } } : t
+                findTab(t) ? { ...t, response: { error: true, message } } : t
             ))
         }
     }
@@ -938,16 +978,38 @@ function App() {
                             <path fillRule="evenodd" d="M4.83 5.14a.75.75 0 011.06.02L10 9.42l4.11-4.26a.75.75 0 011.08 1.04l-4.58 4.75a.75.75 0 01-1.08 0L4.85 6.2a.75.75 0 01-.02-1.06z" clipRule="evenodd" />
                             <path fillRule="evenodd" d="M2 4.75A.75.75 0 012.75 4h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 4.75z" clipRule="evenodd" />
                         </svg>
-                        <select
-                            value={currentEnvironmentId || ''}
-                            onChange={(e) => setCurrentEnvironmentId(e.target.value || null)}
-                            className="bg-transparent border-none text-sm focus:outline-none cursor-pointer pr-6 text-text-primary"
-                        >
-                            <option value="">No Environment</option>
-                            {environments.map((env) => (
-                                <option key={env.id} value={env.id}>{env.name}</option>
-                            ))}
-                        </select>
+                        <div className="relative" ref={envDropdownRef}>
+                            <button
+                                onClick={() => setEnvDropdownOpen(prev => !prev)}
+                                className="bg-transparent border-none text-sm focus:outline-none cursor-pointer text-text-primary flex items-center gap-1 px-1 py-0.5 hover:text-white transition-colors"
+                            >
+                                {currentEnvironmentId
+                                    ? environments.find(e => String(e.id) === currentEnvironmentId)?.name || 'No Environment'
+                                    : 'No Environment'}
+                                <svg className={`w-3 h-3 text-text-tertiary transition-transform ${envDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                </svg>
+                            </button>
+                            {envDropdownOpen && (
+                                <div className="absolute top-full right-0 mt-1 min-w-[160px] bg-bg-secondary border border-gray-600 rounded shadow-lg z-50 overflow-hidden">
+                                    <button
+                                        onClick={() => { setCurrentEnvironmentId(null); setEnvDropdownOpen(false); }}
+                                        className={`w-full text-left px-3 py-2 text-sm transition-colors hover:bg-bg-tertiary ${!currentEnvironmentId ? 'bg-bg-tertiary text-white' : 'text-text-secondary'}`}
+                                    >
+                                        No Environment
+                                    </button>
+                                    {environments.map((env) => (
+                                        <button
+                                            key={env.id}
+                                            onClick={() => { setCurrentEnvironmentId(String(env.id)); setEnvDropdownOpen(false); }}
+                                            className={`w-full text-left px-3 py-2 text-sm transition-colors hover:bg-bg-tertiary ${currentEnvironmentId === String(env.id) ? 'bg-bg-tertiary text-white' : 'text-text-secondary'}`}
+                                        >
+                                            {env.name}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
                         <button
                             onClick={() => setShowEnvModal(true)}
                             className="p-1 hover:bg-bg-primary rounded"
@@ -1080,8 +1142,25 @@ function App() {
                         }
                         setOpenTabs(prev => prev.filter((t: Tab) => t.requestId !== reqId))
                     }}
+                    onRenameStandaloneRequest={async (reqId: string, newName: string) => {
+                        if (user?.id) {
+                            const numId = parseInt(reqId)
+                            if (!isNaN(numId)) {
+                                await db.requests.update(numId, { name: newName })
+                            }
+                            // Also update tab title if open
+                            setOpenTabs(prev => prev.map((t: Tab) =>
+                                t.requestId === reqId ? { ...t, title: newName, request: t.request ? { ...t.request, name: newName } : undefined } : t
+                            ))
+                            // Update current request if it's the one being renamed
+                            if (currentRequestId === reqId && currentRequest) {
+                                setCurrentRequest({ ...currentRequest, name: newName })
+                            }
+                        }
+                    }}
                     user={user}
                     onLogout={handleLogout}
+                    openTabs={openTabs}
                 />
 
                 <div className="flex-1 flex flex-col overflow-hidden">
@@ -1534,15 +1613,15 @@ function App() {
                                     <div key={env.id} className="bg-bg-tertiary rounded-lg p-4">
                                         <div className="flex items-center justify-between mb-3">
                                             <div className="flex items-center gap-2">
-                                                <span className={`w-2 h-2 rounded-full ${currentEnvironmentId === env.id ? 'bg-green-400' : 'bg-gray-500'}`} />
+                                                <span className={`w-2 h-2 rounded-full ${currentEnvironmentId === String(env.id) ? 'bg-green-400' : 'bg-gray-500'}`} />
                                                 <h4 className="font-semibold">{env.name}</h4>
-                                                {currentEnvironmentId === env.id && (
+                                                {currentEnvironmentId === String(env.id) && (
                                                     <span className="text-xs bg-green-600/30 text-green-400 px-2 py-0.5 rounded">Active</span>
                                                 )}
                                             </div>
                                             <div className="flex gap-2">
                                                 <button
-                                                    onClick={() => setCurrentEnvironmentId(env.id)}
+                                                    onClick={() => setCurrentEnvironmentId(String(env.id))}
                                                     className="px-2 py-1 text-xs bg-accent-secondary/20 text-accent-secondary rounded hover:bg-accent-secondary/30"
                                                 >
                                                     Use
@@ -1554,7 +1633,7 @@ function App() {
                                                             message: `Delete environment "${env.name}"?`,
                                                             onConfirm: async () => {
                                                                 await db.environments.delete(parseInt(env.id))
-                                                                if (currentEnvironmentId === env.id) {
+                                                                if (currentEnvironmentId === String(env.id)) {
                                                                     setCurrentEnvironmentId(null)
                                                                 }
                                                                 setConfirmDialog(null)

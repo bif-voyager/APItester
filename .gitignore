@@ -36,3 +36,7 @@ lerna-debug.log*
 
 # Local dev
 *.local
+
+# Electron Build Artifacts
+release/
+dist-electron/

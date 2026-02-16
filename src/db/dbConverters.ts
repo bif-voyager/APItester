@@ -150,7 +150,7 @@ export const buildCollectionTree = (
                 id: col.id.toString(),
                 name: col.name,
                 items: [],
-                isExpanded: true
+                isExpanded: col.isExpanded ?? false
             } as Collection)
         } else {
             idToObj.set(col.id, {
@@ -158,7 +158,7 @@ export const buildCollectionTree = (
                 name: col.name,
                 type: 'folder',
                 children: [],
-                isExpanded: true
+                isExpanded: col.isExpanded ?? false
             } as CollectionItem)
         }
     })

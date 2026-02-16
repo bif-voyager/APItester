@@ -24,17 +24,14 @@ export interface Auth {
     basicPassword?: string
 }
 
-export type CollectionItem = {
+export interface CollectionItem {
     id: string
     name: string
-    type: 'folder'
-    children: CollectionItem[]
+    type: 'folder' | 'request'
+    children?: CollectionItem[]
+    request?: Request
     isExpanded?: boolean
-} | {
-    id: string
-    name: string
-    type: 'request'
-    request: Request
+    parentId?: string | null
 }
 
 export interface Collection {
@@ -75,5 +72,30 @@ export interface HistoryItem {
         status?: number
         statusText?: string
         time?: number
+    }
+}
+
+export interface RunResult {
+    request: Request
+    status: 'pending' | 'running' | 'passed' | 'failed'
+    responseStatus?: number
+    responseTime?: number
+    error?: string
+    iteration?: number
+}
+
+export interface Tab {
+    id: string
+    type: 'request' | 'run'
+    title: string
+    requestId?: string
+    collectionId?: string
+    request?: Request
+    response?: Response | null
+    runResults?: RunResult[]
+    runCollectionName?: string
+    lastRunnerConfig?: {
+        config: any
+        requests: any
     }
 }

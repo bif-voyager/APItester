@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { CollectionItem, Request } from '../types';
+import { CollectionItem, Request, Tab } from '../types';
 import ContextMenu from './ContextMenu';
 
 interface CollectionTreeItemProps {
@@ -18,6 +18,7 @@ interface CollectionTreeItemProps {
     onAddFolder: (parentId: string | null) => void;
     onMoveItem: (collectionId: string, sourceItemId: string, targetItemId: string | null, sourceCollectionId: string | null) => void;
     searchTerm: string;
+    openTabs?: Tab[];
 }
 
 export default function CollectionTreeItem({
@@ -36,6 +37,7 @@ export default function CollectionTreeItem({
     onAddFolder,
     onMoveItem,
     searchTerm = '',
+    openTabs = [],
 }: CollectionTreeItemProps) {
     const [editName, setEditName] = useState(item.name);
     const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
@@ -44,6 +46,10 @@ export default function CollectionTreeItem({
 
     // Use controlled editing from props or fallback to internal
     const isEditing = editingItemId === item.id;
+
+    // Resolve displayed request (prefer active tab state if available)
+    const activeTab = openTabs.find(t => t.requestId === item.id || t.request?.id === item.id);
+    const displayedRequest = (item.type === 'request' && activeTab?.request) ? activeTab.request : item.request;
 
     const handleSaveRename = () => {
         if (editName.trim() && editName !== item.name) {
@@ -103,9 +109,7 @@ export default function CollectionTreeItem({
 
         // Allow move if source is different or collection is different
         if (sourceId !== item.id) {
-            // Pass sourceCollectionId as 4th argument if needed, or handle in App.tsx
-            // Current signature: onMoveItem(collectionId, sourceItemId, targetItemId)
-            // We need to change signature to support cross-collection
+            // Pass sourceCollectionId as 4th argument if needed
             onMoveItem(collectionId, sourceId, item.id, sourceColId || null);
         }
     };
@@ -225,6 +229,7 @@ export default function CollectionTreeItem({
                                     onAddFolder={onAddFolder}
                                     onMoveItem={onMoveItem}
                                     searchTerm={searchTerm}
+                                    openTabs={openTabs}
                                 />
                             ))}
                     </div>
@@ -250,7 +255,12 @@ export default function CollectionTreeItem({
     }
 
     // Request item
-    const request = item.request;
+    // Use displayedRequest instead of item.request!
+    const request = displayedRequest || item.request;
+
+    // Safety check if request is missing (should vary rarely happen if item.type is request)
+    if (!request) return null;
+
     const isActive = currentRequestId === item.id;
 
     return (
