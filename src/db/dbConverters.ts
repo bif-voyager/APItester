@@ -209,9 +209,9 @@ export const saveCollectionToDb = async (userId: number, collection: Collection)
     const processItems = async (items: CollectionItem[], parentId: number) => {
         for (const item of items) {
             if (item.type === 'folder') {
-                const folderId = await db.createCollection(userId, item.name, parentId)
-                await processItems(item.children, folderId)
-            } else if (item.type === 'request') {
+                const folderId = await db.createCollection(userId, item.name, parentId) || 0
+                await processItems(item.children || [], folderId)
+            } else if (item.type === 'request' && item.request) {
                 await db.createRequest(userId, uiRequestToDbRequest(item.request, userId, parentId))
             }
         }

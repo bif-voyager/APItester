@@ -91,7 +91,7 @@ export default function RunnerConfiguration({
             // Dragged an item/folder
             const item = findItemInTree(collection.items, sourceId)
             if (item) {
-                if (item.type === 'request') {
+                if (item.type === 'request' && item.request) {
                     requestsToAdd = [item.request]
                 } else if (item.type === 'folder') {
                     requestsToAdd = getAllRequestsFromItems([item])

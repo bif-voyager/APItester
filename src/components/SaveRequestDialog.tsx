@@ -19,7 +19,7 @@ function getFolders(items: CollectionItem[], level = 0): FolderOption[] {
     for (const item of items) {
         if (item.type === 'folder') {
             folders.push({ id: item.id, name: item.name, level })
-            folders.push(...getFolders(item.children, level + 1))
+            folders.push(...getFolders(item.children || [], level + 1))
         }
     }
     return folders
@@ -75,8 +75,8 @@ export default function SaveRequestDialog({
                                     setSelectedFolderId(null)
                                 }}
                                 className={`w-full text-left px-3 py-2 rounded text-sm transition-colors flex items-center gap-2 ${selectedCollectionId === null
-                                        ? 'bg-accent-primary/20 text-accent-primary border border-accent-primary/40'
-                                        : 'hover:bg-bg-tertiary text-text-secondary border border-transparent'
+                                    ? 'bg-accent-primary/20 text-accent-primary border border-accent-primary/40'
+                                    : 'hover:bg-bg-tertiary text-text-secondary border border-transparent'
                                     }`}
                             >
                                 <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -94,8 +94,8 @@ export default function SaveRequestDialog({
                                         setSelectedFolderId(null)
                                     }}
                                     className={`w-full text-left px-3 py-2 rounded text-sm transition-colors flex items-center gap-2 ${selectedCollectionId === col.id
-                                            ? 'bg-accent-primary/20 text-accent-primary border border-accent-primary/40'
-                                            : 'hover:bg-bg-tertiary text-text-secondary border border-transparent'
+                                        ? 'bg-accent-primary/20 text-accent-primary border border-accent-primary/40'
+                                        : 'hover:bg-bg-tertiary text-text-secondary border border-transparent'
                                         }`}
                                 >
                                     <span className="flex-shrink-0">📁</span>
@@ -116,8 +116,8 @@ export default function SaveRequestDialog({
                                 <button
                                     onClick={() => setSelectedFolderId(null)}
                                     className={`w-full text-left px-3 py-2 rounded text-sm transition-colors ${selectedFolderId === null
-                                            ? 'bg-accent-secondary/20 text-accent-secondary border border-accent-secondary/40'
-                                            : 'hover:bg-bg-tertiary text-text-secondary border border-transparent'
+                                        ? 'bg-accent-secondary/20 text-accent-secondary border border-accent-secondary/40'
+                                        : 'hover:bg-bg-tertiary text-text-secondary border border-transparent'
                                         }`}
                                 >
                                     / Root
@@ -127,8 +127,8 @@ export default function SaveRequestDialog({
                                         key={folder.id}
                                         onClick={() => setSelectedFolderId(folder.id)}
                                         className={`w-full text-left px-3 py-2 rounded text-sm transition-colors flex items-center gap-1 ${selectedFolderId === folder.id
-                                                ? 'bg-accent-secondary/20 text-accent-secondary border border-accent-secondary/40'
-                                                : 'hover:bg-bg-tertiary text-text-secondary border border-transparent'
+                                            ? 'bg-accent-secondary/20 text-accent-secondary border border-accent-secondary/40'
+                                            : 'hover:bg-bg-tertiary text-text-secondary border border-transparent'
                                             }`}
                                         style={{ paddingLeft: `${folder.level * 16 + 12}px` }}
                                     >
