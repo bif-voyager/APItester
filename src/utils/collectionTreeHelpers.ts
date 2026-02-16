@@ -13,7 +13,7 @@ export function findItemInTree(
     for (const item of items) {
         if (item.id === itemId) return item;
         if (item.type === 'folder') {
-            const found = findItemInTree(item.children, itemId);
+            const found = findItemInTree(item.children || [], itemId);
             if (found) return found;
         }
     }
@@ -28,7 +28,7 @@ export function deleteItemFromTree(
     return items.filter((item) => {
         if (item.id === itemId) return false;
         if (item.type === 'folder') {
-            item.children = deleteItemFromTree(item.children, itemId);
+            item.children = deleteItemFromTree(item.children || [], itemId);
         }
         return true;
     });
@@ -47,7 +47,7 @@ export function renameItemInTree(
         if (item.type === 'folder') {
             return {
                 ...item,
-                children: renameItemInTree(item.children, itemId, newName),
+                children: renameItemInTree(item.children || [], itemId, newName),
             };
         }
         return item;
@@ -66,7 +66,7 @@ export function toggleExpandInTree(
         if (item.type === 'folder') {
             return {
                 ...item,
-                children: toggleExpandInTree(item.children, itemId),
+                children: toggleExpandInTree(item.children || [], itemId),
             };
         }
         return item;
@@ -94,13 +94,13 @@ export function addRequestToTree(
         if (item.id === parentId && item.type === 'folder') {
             return {
                 ...item,
-                children: [...item.children, requestItem],
+                children: [...(item.children || []), requestItem],
                 isExpanded: true, // Auto-expand when adding
             };
         } else if (item.type === 'folder') {
             return {
                 ...item,
-                children: addRequestToTree(item.children, parentId, request),
+                children: addRequestToTree(item.children || [], parentId, request),
             };
         }
         return item;
@@ -130,14 +130,14 @@ export function addFolderToTree(
         if (item.id === parentId && item.type === 'folder') {
             return {
                 ...item,
-                children: [...item.children, folderItem],
+                children: [...(item.children || []), folderItem],
                 isExpanded: true,
             };
         }
         if (item.type === 'folder') {
             return {
                 ...item,
-                children: addFolderToTree(item.children, parentId, folderName, folderId),
+                children: addFolderToTree(item.children || [], parentId, folderName, folderId),
             };
         }
         return item;
@@ -149,10 +149,10 @@ export function getAllRequestsFromTree(items: CollectionItem[]): Request[] {
     const requests: Request[] = [];
 
     for (const item of items) {
-        if (item.type === 'request') {
+        if (item.type === 'request' && item.request) {
             requests.push(item.request);
         } else if (item.type === 'folder') {
-            requests.push(...getAllRequestsFromTree(item.children));
+            requests.push(...getAllRequestsFromTree(item.children || []));
         }
     }
 
@@ -166,10 +166,10 @@ export function findRequestInTree(
 ): Request | null {
     for (const item of items) {
         if (item.type === 'request' && item.id === requestId) {
-            return item.request;
+            return item.request || null;
         }
         if (item.type === 'folder') {
-            const found = findRequestInTree(item.children, requestId);
+            const found = findRequestInTree(item.children || [], requestId);
             if (found) return found;
         }
     }
@@ -238,14 +238,14 @@ export function addExistingItemToTree(
         if (item.id === parentId && item.type === 'folder') {
             return {
                 ...item,
-                children: [...item.children, itemToAdd],
+                children: [...(item.children || []), itemToAdd],
                 isExpanded: true,
             };
         }
         if (item.type === 'folder') {
             return {
                 ...item,
-                children: addExistingItemToTree(item.children, parentId, itemToAdd),
+                children: addExistingItemToTree(item.children || [], parentId, itemToAdd),
             };
         }
         return item;
@@ -271,7 +271,7 @@ export function insertItemBeforeSibling(
         if (item.type === 'folder') {
             return {
                 ...item,
-                children: insertItemBeforeSibling(item.children, siblingId, itemToAdd),
+                children: insertItemBeforeSibling(item.children || [], siblingId, itemToAdd),
             };
         }
         return item;
@@ -283,10 +283,10 @@ export function getAllRequestsFromItems(items: CollectionItem[]): Request[] {
     const requests: Request[] = [];
 
     for (const item of items) {
-        if (item.type === 'request') {
+        if (item.type === 'request' && item.request) {
             requests.push(item.request);
         } else if (item.type === 'folder') {
-            requests.push(...getAllRequestsFromItems(item.children));
+            requests.push(...getAllRequestsFromItems(item.children || []));
         }
     }
 
