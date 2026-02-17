@@ -4,28 +4,23 @@ import { DBCollection, DBRequest } from '../db/db'
 // Convert DBRequest to UI Request
 export const dbRequestToUiRequest = (dbReq: DBRequest): Request => {
     return {
-        id: dbReq.id.toString(),
+        id: dbReq.id,
         name: dbReq.name,
         method: dbReq.method,
         url: dbReq.url,
-        params: (dbReq.params || []).map(p => ({ ...p, enabled: p.enabled ?? true })),
-        headers: (dbReq.headers || []).map(h => ({ ...h, enabled: h.enabled ?? true })),
+        params: dbReq.params || [],
+        headers: dbReq.headers || [],
         body: dbReq.body || '',
-        auth: dbReq.auth ? {
-            type: dbReq.auth.type,
-            bearerToken: dbReq.auth.bearerToken,
-            basicUsername: dbReq.auth.basicUsername,
-            basicPassword: dbReq.auth.basicPassword
-        } : { type: 'none' }
+        auth: dbReq.auth || { type: 'none' }
     }
 }
 
 // Convert UI Request to DBRequest (for saving)
-// Note: ID generation is handled by DB for new items
-export const uiRequestToDbRequest = (req: Request, ownerId: number, collectionId?: number): Omit<DBRequest, 'id'> => {
+// Note: ID generation is handled by DB for new items or we generate UUIDs
+export const uiRequestToDbRequest = (req: Request, ownerId: string, collectionId?: string): Omit<DBRequest, 'id'> => {
     return {
-        ownerId,
-        collectionId,
+        user_id: ownerId,
+        collection_id: collectionId,
         name: req.name,
         method: req.method,
         url: req.url,
@@ -41,12 +36,12 @@ export const buildCollectionTree = (
     dbCollections: DBCollection[],
     dbRequests: DBRequest[]
 ): Collection[] => {
-    const collectionsMap = new Map<number, DBCollection>()
-    const itemsByParentId = new Map<number, CollectionItem[]>()
+    const collectionsMap = new Map<string, DBCollection>()
+    const itemsByParentId = new Map<string, CollectionItem[]>()
     const rootCollections: Collection[] = []
 
     // Helper to get or create items array for a parent
-    const getItemsList = (parentId: number) => {
+    const getItemsList = (parentId: string) => {
         if (!itemsByParentId.has(parentId)) {
             itemsByParentId.set(parentId, [])
         }
@@ -57,8 +52,9 @@ export const buildCollectionTree = (
     dbCollections.forEach(col => collectionsMap.set(col.id, col))
 
     // Process Requests first (leaf nodes)
+    // Process Requests first (leaf nodes)
     dbRequests.forEach(req => {
-        if (req.collectionId) {
+        if (req.collection_id) {
             const uiReq = dbRequestToUiRequest(req)
             const item: CollectionItem = {
                 id: uiReq.id,
@@ -66,7 +62,7 @@ export const buildCollectionTree = (
                 type: 'request',
                 request: uiReq
             }
-            getItemsList(req.collectionId).push(item)
+            getItemsList(req.collection_id).push(item)
         }
     })
 
@@ -76,10 +72,10 @@ export const buildCollectionTree = (
     // and then link them up.
 
     // First, convert all DBCollections to Items or Root Collections
-    const processedCollections = new Map<number, Collection | CollectionItem>()
+    const processedCollections = new Map<string, Collection | CollectionItem>()
 
-    // Sort by ID to ensure consistent order (temp solution for ordering)
-    const sortedCollections = [...dbCollections].sort((a, b) => a.id - b.id)
+    // Sort by name for now, or use created_at if available
+    const sortedCollections = [...dbCollections].sort((a, b) => a.name.localeCompare(b.name))
 
     sortedCollections.forEach(col => {
         // We don't know the nesting depth yet, but we know its parentId.
@@ -87,28 +83,30 @@ export const buildCollectionTree = (
         const children = itemsByParentId.get(col.id) || []
 
         // Use default isExpanded=true for now
-        const isExpanded = true
+        // Use default isExpanded=true for now
+        // const isExpanded = true
 
-        if (col.parentId === null) {
+        if (col.parent_id === null) {
             // Root Collection
             const rootCol: Collection = {
-                id: col.id.toString(),
+                id: col.id,
                 name: col.name,
                 items: children, // Will be populated with requests, but sub-folders need to be added
-                isExpanded
+                isExpanded: col.is_expanded
             }
             rootCollections.push(rootCol)
             processedCollections.set(col.id, rootCol)
         } else {
             // Sub-folder
             const folderItem: CollectionItem = {
-                id: col.id.toString(),
+                id: col.id,
                 name: col.name,
                 type: 'folder',
                 children: children,
-                isExpanded
+                isExpanded: col.is_expanded,
+                parentId: col.parent_id
             }
-            getItemsList(col.parentId).push(folderItem)
+            getItemsList(col.parent_id).push(folderItem)
             processedCollections.set(col.id, folderItem)
         }
     })
@@ -121,7 +119,7 @@ export const buildCollectionTree = (
 
     // Let's re-iterate to link folders to parents
     sortedCollections.forEach(col => {
-        if (col.parentId !== null) {
+        if (col.parent_id !== null) {
             // Ensure this folder is in its parent's list
             // Note: The parent might be a Root Collection or another Folder.
             // But we are building 'itemsByParentId' effectively?
@@ -141,32 +139,33 @@ export const buildCollectionTree = (
     // 4. Iterate Collections (folders): add to parent's items/children.
     // 5. Roots are those with parentId null.
 
-    const idToObj = new Map<number, any>()
+    const idToObj = new Map<string, any>()
 
     // Initialize objects
     dbCollections.forEach(col => {
-        if (col.parentId === null) {
+        if (col.parent_id === null) {
             idToObj.set(col.id, {
-                id: col.id.toString(),
+                id: col.id,
                 name: col.name,
                 items: [],
-                isExpanded: col.isExpanded ?? false
+                isExpanded: col.is_expanded ?? false
             } as Collection)
         } else {
             idToObj.set(col.id, {
-                id: col.id.toString(),
+                id: col.id,
                 name: col.name,
                 type: 'folder',
                 children: [],
-                isExpanded: col.isExpanded ?? false
+                isExpanded: col.is_expanded ?? false,
+                parentId: col.parent_id
             } as CollectionItem)
         }
     })
 
     // Link Requests
     dbRequests.forEach(req => {
-        if (req.collectionId && idToObj.has(req.collectionId)) {
-            const parent = idToObj.get(req.collectionId)
+        if (req.collection_id && idToObj.has(req.collection_id)) {
+            const parent = idToObj.get(req.collection_id)
             const uiReq = dbRequestToUiRequest(req)
             const item: CollectionItem = {
                 id: uiReq.id,
@@ -181,10 +180,10 @@ export const buildCollectionTree = (
 
     // Link Sub-folders
     dbCollections.forEach(col => {
-        if (col.parentId !== null) {
+        if (col.parent_id !== null) {
             const child = idToObj.get(col.id)
-            if (col.parentId && idToObj.has(col.parentId)) {
-                const parent = idToObj.get(col.parentId)
+            if (col.parent_id && idToObj.has(col.parent_id)) {
+                const parent = idToObj.get(col.parent_id)
                 if (parent.items) parent.items.push(child)
                 else if (parent.children) parent.children.push(child)
             }
@@ -193,23 +192,23 @@ export const buildCollectionTree = (
 
     // Extract Roots
     return dbCollections
-        .filter(c => c.parentId === null)
+        .filter(c => c.parent_id === null)
         .map(c => idToObj.get(c.id) as Collection)
-        .sort((a, b) => parseInt(a.id) - parseInt(b.id))
+        .sort((a, b) => a.name.localeCompare(b.name))
 }
 
 // Helper to recursively save a UI Collection to DB
 import { db } from './db'
 
-export const saveCollectionToDb = async (userId: number, collection: Collection) => {
+export const saveCollectionToDb = async (userId: string, collection: Collection) => {
     // 1. Create Root Collection
     const rootId = await db.createCollection(userId, collection.name, null)
 
     // 2. Process Items recursively
-    const processItems = async (items: CollectionItem[], parentId: number) => {
+    const processItems = async (items: CollectionItem[], parentId: string) => {
         for (const item of items) {
             if (item.type === 'folder') {
-                const folderId = await db.createCollection(userId, item.name, parentId) || 0
+                const folderId = await db.createCollection(userId, item.name, parentId) || ''
                 await processItems(item.children || [], folderId)
             } else if (item.type === 'request' && item.request) {
                 await db.createRequest(userId, uiRequestToDbRequest(item.request, userId, parentId))

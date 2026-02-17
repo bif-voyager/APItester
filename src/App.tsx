@@ -1,5 +1,8 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 
+// Remove handleLogin entirely since it was only for Guest mode which is removed.
+// We can just rely on Supabase Auth state listener.
+
 import Sidebar from './components/Sidebar'
 import RequestEditor from './components/RequestEditor'
 import ResponseViewer from './components/ResponseViewer'
@@ -21,68 +24,44 @@ import {
     // addItemToTreeAtPosition,
     // toggleExpandInTree,
 } from './utils/collectionTreeHelpers'
-import { hashPassword } from './utils/auth'
+
 import { getDefaultHeadersForMethod } from './utils/httpHelpers'
+import { supabase } from './supabaseClient'
 
 function App() {
-    // Auth State - Update type to include ID
-    const [user, setUser] = useState<{ id?: number; name: string; mode: 'user' | 'guest' } | null>(() => {
-        // Check localStorage first (Remember Me)
-        const savedLocal = localStorage.getItem('api-client-user')
-        if (savedLocal) {
-            try { return JSON.parse(savedLocal) } catch { return null }
-        }
-        // Then check sessionStorage (Session only)
-        const savedSession = sessionStorage.getItem('api-client-user')
-        if (savedSession) {
-            try { return JSON.parse(savedSession) } catch { return null }
-        }
-        return null
-    })
+    const [user, setUser] = useState<{ id: string; email?: string; name: string } | null>(null)
 
-    // ... 
-
-    // DB Environments Hook
-    // We strictly use the hook for source of truth.
-    // If user is guest/null, we might want a local temporary state or just disable.
-    // Detailed req: "one user should not see...". Guests?
-    // Let's assume Guests use local state or a specific Guest ID in DB?
-    // The previous `handleLogin` sets Guest ID to -1.
-    // DB `ownerId` is number.
-    // We can use -1 for guest in DB or just use local state for guest.
-    // For simplicity and "multi-tenancy" focus, let's just use the hook.
-    // If usage of -1 is problematic (e.g. valid IDs are ++id), we should be careful.
-    // Dexie auto-increment starts at 1. So -1 is safe for "Guest" or "System".
-
-    // Migrate legacy user sessions (missing ID)
     useEffect(() => {
-        const migrateUser = async () => {
-            if (user && user.id === undefined) {
-                if (user.mode === 'guest') {
-                    const updated = { ...user, id: -1 }
-                    setUser(updated)
-                    // Update whichever storage was used
-                    if (localStorage.getItem('api-client-user')) {
-                        localStorage.setItem('api-client-user', JSON.stringify(updated))
-                    } else {
-                        sessionStorage.setItem('api-client-user', JSON.stringify(updated))
-                    }
-                } else if (user.name) {
-                    const dbUser = await db.getUser(user.name)
-                    if (dbUser) {
-                        const updated = { ...user, id: dbUser.id }
-                        setUser(updated)
-                        localStorage.setItem('api-client-user', JSON.stringify(updated))
-                    } else {
-                        // Invalid state - logout
-                        setUser(null)
-                        localStorage.removeItem('api-client-user')
-                    }
+        // Initial Session Check
+        import('./supabaseClient').then(({ supabase }) => {
+            supabase.auth.getSession().then(({ data: { session } }: { data: { session: any } }) => {
+                if (session?.user) {
+                    const { user } = session
+                    setUser({
+                        id: user.id,
+                        email: user.email,
+                        name: user.user_metadata?.username || user.email || 'User'
+                    })
                 }
-            }
-        }
-        migrateUser()
-    }, [user])
+            })
+
+            // Auth State Listener
+            const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: string, session: any) => {
+                if (session?.user) {
+                    const { user } = session
+                    setUser({
+                        id: user.id,
+                        email: user.email,
+                        name: user.user_metadata?.username || user.email || 'User'
+                    })
+                } else {
+                    setUser(null)
+                }
+            })
+
+            return () => subscription.unsubscribe()
+        })
+    }, [])
 
     const dbEnvironments = useUserEnvironments(user?.id)
 
@@ -103,20 +82,80 @@ function App() {
     const dbCollections = useUserCollections(user?.id)
     const dbRequests = useUserRequests(user?.id)
 
+    // --- Optimistic UI State for Expansions ---
+    // We maintain a local set of expanded IDs to ensure instant UI reaction.
+    // This overrides the DB state for the UI, while still syncing to DB in background.
+    const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
+
+    // Sync local state with DB state initially, but don't overwrite user interaction if possible.
+    // Actually, simple approach: Initialize once, then trust local.
+    // Or better: Merge DB state into local state when DB loads, but respect local toggles.
+    // Let's rely on the DB as the source of truth, but "override" with a separate mechanism? 
+    // No, standard optimistic UI: State = DB + Pending changes.
+    // Simpler: Just use local state for the Tree, and sync to DB.
+
+    // Effect to populate expandedIds from DB when loaded (only if empty to avoid reset?)
+    // Or just use a merged view.
+
+    // Update: Let's use a "Optimistic Override" approach.
+    // We largely trust DB, but when user toggles, we update a local map that forces the state
+    // until the DB confirms (or just stays local if we treat DB as persistence only).
+
+    // Let's try: `collections` memo uses `expandedIds` to override `dbCollections`.
+
+    useEffect(() => {
+        if (dbCollections) {
+            setExpandedIds(prev => {
+                const next = new Set(prev)
+                dbCollections.forEach(c => {
+                    if (c.is_expanded) next.add(c.id)
+                })
+                return next
+            })
+        }
+    }, [dbCollections])
+
     // Compute UI Collection Tree
     const collections = useMemo(() => {
         if (!dbCollections || !dbRequests) return []
-        return buildCollectionTree(dbCollections, dbRequests)
-    }, [dbCollections, dbRequests])
+
+        // Create a version of dbCollections with local expanded state
+        const optimisticCollections = dbCollections.map(c => ({
+            ...c,
+            is_expanded: expandedIds.has(c.id)
+        }))
+
+        return buildCollectionTree(optimisticCollections, dbRequests)
+    }, [dbCollections, dbRequests, expandedIds])
+
+    const toggleCollectionExpand = async (collectionId: string) => {
+        // 1. Instant UI Update
+        const isCurrentlyExpanded = expandedIds.has(collectionId)
+        const newExpandedState = !isCurrentlyExpanded
+
+        setExpandedIds(prev => {
+            const next = new Set(prev)
+            if (newExpandedState) next.add(collectionId)
+            else next.delete(collectionId)
+            return next
+        })
+
+        // 2. Background DB Sync
+        if (user?.id) {
+            try {
+                await db.updateCollection(user.id, collectionId, { is_expanded: newExpandedState })
+            } catch (err) {
+                console.error("Failed to sync expand state", err)
+                // Revert on error? Maybe not needed for just expand/collapse
+            }
+        }
+    }
 
     // Compute Standalone Requests (requests with no collectionId)
-    // dbRequests returns ALL requests for user. We need to filter.
-    // Actually useUserRequests(userId) returns all.
-    // We can filter here.
     const standaloneRequests = useMemo(() => {
         if (!dbRequests) return []
         return dbRequests
-            .filter(r => !r.collectionId)
+            .filter(r => !r.collection_id)
             .map(r => ({
                 id: r.id.toString(),
                 name: r.name,
@@ -221,9 +260,6 @@ function App() {
         return result
     }
 
-    // Legacy state persistence removed.
-    // Collections and Requests are now managed by Dexie DB.
-
     // Ctrl+S to save request
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -240,7 +276,7 @@ function App() {
 
     const addCollection = async (name: string) => {
         if (user?.id) {
-            await db.createCollection(user.id, name)
+            await db.createCollection(user.id, name, null)
         }
     }
 
@@ -250,7 +286,7 @@ function App() {
             message: 'Delete this collection and all its items?',
             onConfirm: async () => {
                 if (user?.id) {
-                    await db.deleteCollectionRecursive(user.id, parseInt(collectionId))
+                    await db.deleteCollection(user.id, collectionId)
                     if (currentCollectionId === collectionId) {
                         setCurrentRequest(null)
                         setCurrentRequestId(null)
@@ -264,7 +300,7 @@ function App() {
 
     const renameCollection = async (collectionId: string, newName: string) => {
         if (user?.id) {
-            await db.collections.update(parseInt(collectionId), { name: newName })
+            await db.updateCollection(user.id, collectionId, { name: newName })
         }
     }
 
@@ -274,20 +310,10 @@ function App() {
         }
     }
 
-    const toggleCollectionExpand = async (collectionId: string) => {
-        if (user?.id) {
-            const id = parseInt(collectionId)
-            const col = await db.collections.get(id)
-            if (col) {
-                await db.collections.update(id, { isExpanded: !col.isExpanded })
-            }
-        }
-    }
-
     const addRequestToCollection = async (collectionId: string, parentId?: string) => {
         if (!user?.id) return
         const defaultMethod = 'GET'
-        const targetId = parentId ? parseInt(parentId) : parseInt(collectionId)
+        const targetId = parentId || collectionId
 
         const newRequestData = {
             name: 'Untitled Request',
@@ -301,10 +327,10 @@ function App() {
 
         const id = await db.createRequest(user.id, {
             ...newRequestData,
-            collectionId: targetId
+            collection_id: targetId
         })
 
-        const newRequest = { ...newRequestData, id: id.toString() }
+        const newRequest = { ...newRequestData, id: id }
         setCurrentRequest(newRequest)
         setCurrentRequestId(newRequest.id)
         setCurrentCollectionId(collectionId)
@@ -358,105 +384,77 @@ function App() {
     const addFolder = async (collectionId: string, parentId: string | null): Promise<string | null> => {
         if (!user?.id) return null
         const defaultName = 'New Folder'
-        const targetParentId = parentId ? parseInt(parentId) : parseInt(collectionId)
+        const targetParentId = parentId || collectionId
         const id = await db.createCollection(user.id, defaultName, targetParentId)
-        return id.toString()
+        return id
     }
 
     const moveItem = async (collectionId: string, sourceItemId: string, targetItemId: string | null, sourceCollectionId: string | null) => {
         if (!user?.id) return
 
         // 1. If sourceCollectionId is null, it's a standalone request.
-        // We need to move it to the target collection/folder.
         if (!sourceCollectionId) {
             const requestToMove = standaloneRequests.find(r => r.id === sourceItemId)
             if (requestToMove) {
-                // Determine target collection/folder ID
-                // If targetItemId is null, add to Root Collection (collectionId)
-                // If targetItemId is present, we need to know if it's a folder or request to decide parent.
-                // Limit: We can't easily check type of targetItemId from here without looking up in existing trees.
-                // For now, let's assume if we drop on an item, we put it in that item's parent (if request) or inside (if folder)?
-                // Simplified: Just put in the Root Collection for now if logic is complex, OR try to find parent.
-
-                // Better: Use `collectionTreeHelpers` or similar to find target in `collections`?
-                // `collections` state is available.
-
-                let targetParentId = parseInt(collectionId)
+                let targetParentId = collectionId
                 if (targetItemId) {
-                    // Try to find target item to see if it's a folder
-                    // We can query DB: check if it's a collection
-                    const targetCol = await db.collections.get(parseInt(targetItemId))
+                    const targetCol = await db.getCollection(user.id, targetItemId)
                     if (targetCol) {
-                        // It's a folder. Put inside.
                         targetParentId = targetCol.id
                     } else {
-                        // It's likely a request. Put in its parent.
-                        const targetReq = await db.requests.get(parseInt(targetItemId))
-                        if (targetReq && targetReq.collectionId) {
-                            targetParentId = targetReq.collectionId
+                        const targetReq = await db.getRequest(user.id, targetItemId)
+                        if (targetReq && targetReq.collection_id) {
+                            targetParentId = targetReq.collection_id
                         }
                     }
                 }
 
-                // Create new Item in DB (or update existing if we treat standalone as DB items? 
-                // Standalone are DB requests with collectionId=undefined.
-                // So we just update the request!)
-
-                // Check if it's a saved request (numeric ID)
-                const isSaved = !isNaN(parseInt(sourceItemId))
-                if (isSaved) {
-                    await db.requests.update(parseInt(sourceItemId), { collectionId: targetParentId })
-                } else {
-                    // It's an unsaved standalone request (UUID). We must create it.
-                    await db.requests.update(parseInt(sourceItemId), { collectionId: targetParentId })
-                }
+                // Update request
+                await db.updateRequest(user.id, sourceItemId, { collection_id: targetParentId })
             }
             return
         }
 
         // 2. Intra-collection move or Inter-collection move
-        // Update parentId/collectionId.
-        // We need to determine the new parent.
-        // Similar logic to above.
-
-        let targetParentId = parseInt(collectionId) // Default to root
+        let targetParentId = collectionId
         if (targetItemId) {
-            const targetCol = await db.collections.get(parseInt(targetItemId))
+            const targetCol = await db.getCollection(user.id, targetItemId)
             if (targetCol) {
                 targetParentId = targetCol.id
             } else {
-                const targetReq = await db.requests.get(parseInt(targetItemId))
-                if (targetReq && targetReq.collectionId) {
-                    targetParentId = targetReq.collectionId
+                const targetReq = await db.getRequest(user.id, targetItemId)
+                if (targetReq && targetReq.collection_id) {
+                    targetParentId = targetReq.collection_id
                 }
             }
         }
 
         // Find source item type
-        const sourceCol = await db.collections.get(parseInt(sourceItemId))
+        const sourceCol = await db.getCollection(user.id, sourceItemId)
         if (sourceCol) {
             // Moving a folder
-            await db.collections.update(parseInt(sourceItemId), { parentId: targetParentId === parseInt(collectionId) ? null : targetParentId })
-            // Note: If targetParentId IS the root collection, parentId should be null?
-            // `db.collections` stores `parentId`. `null` means root.
-            // If `targetParentId` == `collectionId` (the root ID passed from UI).
-            // This is correct.
-            // A Root Collection (parentId=null) CANNOT be moved into itself.
-            // But `sourceItemId` implies it's a child being moved.
-
-            // Wait. Root Collections in UI have `parentId` = null in DB.
-            // Can we move a Root Collection?
-            // `moveItem` usually moves items *inside* a collection.
-            // If I drag a Root Collection, `collectionId` might be... ?
-            // UI `AbstractTree` usually handles moves.
-
-            await db.collections.update(parseInt(sourceItemId), { parentId: targetParentId })
+            await db.updateCollection(user.id, sourceItemId, { parent_id: targetParentId })
         } else {
             // Moving a request
-            await db.requests.update(parseInt(sourceItemId), { collectionId: targetParentId })
+            await db.updateRequest(user.id, sourceItemId, { collection_id: targetParentId })
         }
     }
 
+    const deleteEnvironment = async (envId: string) => {
+        if (!user?.id) return
+
+        setConfirmDialog({
+            title: 'Delete Environment',
+            message: 'Are you sure you want to delete this environment?',
+            onConfirm: async () => {
+                await db.deleteEnvironment(user.id, envId)
+                if (currentEnvironmentId === envId) {
+                    setCurrentEnvironmentId(null)
+                }
+                setConfirmDialog(null)
+            }
+        })
+    }
     const deleteItem = async (itemId: string, type: 'folder' | 'request') => {
         if (!user || !user.id) return
 
@@ -465,11 +463,10 @@ function App() {
             message: 'Delete this item?',
             onConfirm: async () => {
                 if (user?.id) {
-                    const id = parseInt(itemId)
                     if (type === 'folder') {
-                        await db.deleteCollectionRecursive(user.id, id)
+                        await db.deleteCollection(user.id, itemId)
                     } else {
-                        await db.deleteRequest(user.id, id)
+                        await db.deleteRequest(user.id, itemId)
                         // Close tab if open
                         setOpenTabs(prev => prev.filter(t => t.requestId !== itemId && t.request?.id !== itemId))
                     }
@@ -486,11 +483,10 @@ function App() {
     const renameItem = async (itemId: string, newName: string, type: 'folder' | 'request') => {
         if (!user || !user.id) return
 
-        const id = parseInt(itemId)
         if (type === 'folder') {
-            await db.collections.update(id, { name: newName })
+            await db.updateCollection(user.id, itemId, { name: newName })
         } else {
-            await db.requests.update(id, { name: newName })
+            await db.updateRequest(user.id, itemId, { name: newName })
             if (currentRequestId === itemId && currentRequest) {
                 setCurrentRequest({ ...currentRequest, name: newName })
             }
@@ -506,12 +502,10 @@ function App() {
 
     const toggleItemExpand = async (itemId: string) => {
         if (!user || !user.id) return
-
         // Toggle expand in DB
-        const id = parseInt(itemId)
-        const col = await db.collections.get(id)
+        const col = await db.getCollection(user.id, itemId)
         if (col) {
-            await db.collections.update(id, { isExpanded: !col.isExpanded })
+            await db.updateCollection(user.id, itemId, { is_expanded: !col.is_expanded })
         }
     }
 
@@ -562,7 +556,7 @@ function App() {
             const targetId = parseInt(collectionId)
             const id = await db.createRequest(user.id, {
                 ...newRequestData,
-                collectionId: targetId
+                collection_id: targetId.toString()
             })
 
             const newRequest = { ...newRequestData, id: id.toString() }
@@ -763,17 +757,28 @@ function App() {
 
         setRunResults(initialResults)
 
-        // 2. Create Run tab
-        const tabId = `run-${Date.now()}`
+        setRunResults(initialResults)
+
+        // 2. Check for existing Run tab to reuse
+        const existingRunTab = openTabs.find(t => t.type === 'run')
+
+        let tabId = existingRunTab ? existingRunTab.id : `run-${Date.now()}`
+
         const runTab: Tab = {
             id: tabId,
             type: 'run',
-            title: `Runner Execution (${requests.length} reqs, ${config.iterations} iter)`,
+            title: `Runner: ${config.collectionName || 'Sequence'}`, // Improved title
             runResults: initialResults,
-            runCollectionName: 'Runner Sequence',
-            lastRunnerConfig: { config, requests } // Save for re-run
+            runCollectionName: config.collectionName || 'Runner Sequence',
+            lastRunnerConfig: { config, requests }
         }
-        setOpenTabs(prev => [...prev, runTab])
+
+        if (existingRunTab) {
+            setOpenTabs(prev => prev.map(t => t.id === tabId ? runTab : t))
+        } else {
+            setOpenTabs(prev => [...prev, runTab])
+        }
+
         setActiveTabId(tabId)
 
         // 3. Execution Loop
@@ -892,71 +897,79 @@ function App() {
         linkElement.click()
     }
 
-    // Auth Handlers
-    const handleLogin = async (username: string, mode: 'user' | 'guest', password?: string, rememberMe: boolean = false) => {
-        if (mode === 'guest') {
-            const guestUser = { id: -1, name: 'Guest', mode: 'guest' } as const // Mock ID for guest
-            setUser(guestUser)
-            // Guest always session? Or remember? Let's assume session for guest usually.
-            // But if they clicked remember me? User asked for "Remember me" at authorization.
-            // Guest button is separate. Let's stick to session for guest for now or respect rememberMe if we added it there (we didn't).
-            sessionStorage.setItem('api-client-user', JSON.stringify(guestUser))
-            return
-        }
-
-        if (!password) {
-            throw new Error("Password is required")
-        }
-
-        try {
-            const hashedPassword = await hashPassword(password)
-
-            // Try to find user in DB
-            let dbUser = await db.getUser(username)
-            let userId: number
-
-            if (dbUser) {
-                // Login: Verify password
-                if (dbUser.passwordHash === hashedPassword) {
-                    userId = dbUser.id
-                } else {
-                    throw new Error('Invalid credentials')
-                }
-            } else {
-                // Register: Create new user
-                userId = await db.createUser(username, hashedPassword)
-            }
-
-            const newUser = { id: userId, name: username, mode: 'user' } as const
-            setUser(newUser)
-
-            if (rememberMe) {
-                localStorage.setItem('api-client-user', JSON.stringify(newUser))
-                sessionStorage.removeItem('api-client-user') // Clear session if any
-            } else {
-                sessionStorage.setItem('api-client-user', JSON.stringify(newUser))
-                localStorage.removeItem('api-client-user') // Ensure no local persistence
-            }
-
-        } catch (e: any) {
-            console.error("Auth error", e)
-            if (e.message !== 'Invalid credentials' && e.message !== 'Password is required') {
-                throw new Error("Authentication failed")
-            }
-            throw e
+    const handleLogout = async () => {
+        if (user?.id === 'guest') {
+            localStorage.removeItem('guest_session')
+            setUser(null)
+        } else {
+            await supabase.auth.signOut()
         }
     }
 
-    const handleLogout = () => {
-        setUser(null)
-        localStorage.removeItem('api-client-user')
-        sessionStorage.removeItem('api-client-user')
+    const handleAuth = async (username: string, mode: 'user' | 'guest', password?: string) => {
+        // Prevent unused var warning
+        void password
+
+        if (mode === 'guest') {
+            const guestUser = {
+                id: 'guest',
+                email: 'guest@local',
+                name: username || 'Guest User'
+            }
+            localStorage.setItem('guest_session', JSON.stringify(guestUser))
+            setUser(guestUser)
+        }
+        // User mode is handled by Supabase listener in useEffect
+    }
+
+    const updateEnvironmentVariable = async (envId: string, index: number, key: string, value: string, enabled: boolean) => {
+        if (!user?.id) return
+        const env = environments.find(e => e.id === envId)
+        if (env) {
+            const newVariables = [...env.variables]
+            newVariables[index] = { key, value, enabled }
+            await db.updateEnvironment(user.id, envId, { variables: newVariables })
+        }
+    }
+    const handleSaveEnvironment = async () => {
+        if (!user?.id) return
+
+        if (isAddingEnv) {
+            if (newEnvName) {
+                const id = await db.createEnvironment(user.id, newEnvName, [])
+                setNewEnvName('')
+                setIsAddingEnv(false)
+                setCurrentEnvironmentId(id)
+            }
+        } else if (currentEnvironment) {
+            await db.updateEnvironment(user.id, currentEnvironment.id, {
+                name: currentEnvironment.name,
+                variables: currentEnvironment.variables
+            })
+        }
+    }
+
+    const removeEnvironmentVariable = async (envId: string, index: number) => {
+        if (!user?.id) return
+        const env = environments.find(e => e.id === envId)
+        if (env) {
+            const newVariables = env.variables.filter((_, i) => i !== index)
+            await db.updateEnvironment(user.id, envId, { variables: newVariables })
+        }
+    }
+    const addEnvironmentVariable = async (envId: string) => {
+        if (!user?.id) return
+        const env = environments.find(e => e.id === envId)
+        if (env) {
+            const newVariables = [...env.variables, { key: '', value: '', enabled: true }]
+            await db.updateEnvironment(user.id, envId, { variables: newVariables })
+        }
     }
 
     if (!user) {
         return (
             <div className={`h-screen w-screen flex flex-col overflow-hidden bg-bg-primary text-text-primary ${theme === 'light' ? 'light' : 'dark'}`} data-theme={theme}>
-                <AuthPage onLogin={handleLogin} />
+                <AuthPage onLogin={handleAuth} />
             </div>
         )
     }
@@ -965,9 +978,17 @@ function App() {
         <div className={`h-screen w-screen flex bg-bg-primary text-text-primary ${theme === 'light' ? 'light' : 'dark'}`} data-theme={theme}>
             {/* App Bar */}
             <div className="fixed top-0 left-0 right-0 h-14 bg-bg-secondary border-b border-gray-700 flex items-center justify-between px-4 z-10">
-                <div className="flex items-center gap-3">
+                <div
+                    className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity"
+                    onClick={() => {
+                        setCurrentRequest(null)
+                        setCurrentRequestId(null)
+                        setCurrentCollectionId(null)
+                        setActiveTabId(null)
+                    }}
+                >
                     <svg className="w-7 h-7 text-accent-primary" fill="currentColor" viewBox="0 0 20 20">
-                        <path d="M10 2a8 8 0 100 16 8 8 0 000-16zM9 9V5h2v4h4v2h-4v4H9v-4H5V9h4z" />
+                        <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
                     </svg>
                     <h1 className="text-xl font-bold">API Client</h1>
                 </div>
@@ -1095,16 +1116,18 @@ function App() {
                         // Adapter: Try to find if it's a folder or request
                         // Since we don't have type info from Sidebar easily without changing everything, 
                         // let's try to find it in collections first.
-                        const id = parseInt(itemId)
-                        const col = await db.collections.get(id)
-                        const type = col ? 'folder' : 'request'
-                        deleteItem(itemId, type)
+                        if (user?.id) {
+                            const col = await db.getCollection(user.id, itemId)
+                            const type = col ? 'folder' : 'request'
+                            deleteItem(itemId, type)
+                        }
                     }}
                     onRenameItem={async (_colId: string, itemId: string, newName: string) => {
-                        const id = parseInt(itemId)
-                        const col = await db.collections.get(id)
-                        const type = col ? 'folder' : 'request'
-                        renameItem(itemId, newName, type)
+                        if (user?.id) {
+                            const col = await db.getCollection(user.id, itemId)
+                            const type = col ? 'folder' : 'request'
+                            renameItem(itemId, newName, type)
+                        }
                     }}
                     onToggleItemExpand={(_colId: string, itemId: string) => toggleItemExpand(itemId)}
                     onSelectRequest={selectRequest}
@@ -1136,18 +1159,13 @@ function App() {
                     }}
                     onDeleteStandaloneRequest={async (reqId: string) => {
                         if (user?.id) {
-                            if (!isNaN(parseInt(reqId))) {
-                                await db.requests.delete(parseInt(reqId))
-                            }
+                            await db.deleteRequest(user.id, reqId)
                         }
                         setOpenTabs(prev => prev.filter((t: Tab) => t.requestId !== reqId))
                     }}
                     onRenameStandaloneRequest={async (reqId: string, newName: string) => {
                         if (user?.id) {
-                            const numId = parseInt(reqId)
-                            if (!isNaN(numId)) {
-                                await db.requests.update(numId, { name: newName })
-                            }
+                            await db.updateRequest(user.id, reqId, { name: newName })
                             // Also update tab title if open
                             setOpenTabs(prev => prev.map((t: Tab) =>
                                 t.requestId === reqId ? { ...t, title: newName, request: t.request ? { ...t.request, name: newName } : undefined } : t
@@ -1543,13 +1561,7 @@ function App() {
                                             onChange={(e) => setNewEnvName(e.target.value)}
                                             onKeyDown={async (e) => {
                                                 if (e.key === 'Enter' && newEnvName.trim()) {
-                                                    if (user?.id) {
-                                                        await db.createEnvironment(user.id, newEnvName.trim(), [
-                                                            { key: 'baseUrl', value: 'https://api.example.com', enabled: true }
-                                                        ])
-                                                    }
-                                                    setNewEnvName('')
-                                                    setIsAddingEnv(false)
+                                                    handleSaveEnvironment()
                                                 }
                                                 if (e.key === 'Escape') {
                                                     setNewEnvName('')
@@ -1561,17 +1573,7 @@ function App() {
                                             autoFocus
                                         />
                                         <button
-                                            onClick={async () => {
-                                                if (newEnvName.trim()) {
-                                                    if (user?.id) {
-                                                        await db.createEnvironment(user.id, newEnvName.trim(), [
-                                                            { key: 'baseUrl', value: 'https://api.example.com', enabled: true }
-                                                        ])
-                                                    }
-                                                    setNewEnvName('')
-                                                    setIsAddingEnv(false)
-                                                }
-                                            }}
+                                            onClick={handleSaveEnvironment}
                                             disabled={!newEnvName.trim()}
                                             className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded transition-all text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                                         >
@@ -1628,17 +1630,7 @@ function App() {
                                                 </button>
                                                 <button
                                                     onClick={() => {
-                                                        setConfirmDialog({
-                                                            title: 'Delete Environment',
-                                                            message: `Delete environment "${env.name}"?`,
-                                                            onConfirm: async () => {
-                                                                await db.environments.delete(parseInt(env.id))
-                                                                if (currentEnvironmentId === String(env.id)) {
-                                                                    setCurrentEnvironmentId(null)
-                                                                }
-                                                                setConfirmDialog(null)
-                                                            },
-                                                        })
+                                                        deleteEnvironment(env.id)
                                                     }}
                                                     className="px-2 py-1 text-xs bg-red-500/20 text-red-400 rounded hover:bg-red-500/30"
                                                 >
@@ -1665,11 +1657,7 @@ function App() {
                                                                 <input
                                                                     type="checkbox"
                                                                     checked={variable.enabled}
-                                                                    onChange={async (e) => {
-                                                                        const newVars = [...env.variables]
-                                                                        newVars[varIndex] = { ...variable, enabled: e.target.checked }
-                                                                        await db.environments.update(parseInt(env.id), { variables: newVars })
-                                                                    }}
+                                                                    onChange={(e) => updateEnvironmentVariable(env.id, varIndex, variable.key, variable.value, e.target.checked)}
                                                                     className="w-4 h-4"
                                                                 />
                                                             </td>
@@ -1677,11 +1665,7 @@ function App() {
                                                                 <input
                                                                     type="text"
                                                                     value={variable.key}
-                                                                    onChange={async (e) => {
-                                                                        const newVars = [...env.variables]
-                                                                        newVars[varIndex] = { ...variable, key: e.target.value }
-                                                                        await db.environments.update(parseInt(env.id), { variables: newVars })
-                                                                    }}
+                                                                    onChange={(e) => updateEnvironmentVariable(env.id, varIndex, e.target.value, variable.value, variable.enabled)}
                                                                     placeholder="variable_name"
                                                                     className="w-full bg-transparent border border-gray-600 rounded px-2 py-1 focus:outline-none focus:border-accent-secondary"
                                                                 />
@@ -1690,21 +1674,14 @@ function App() {
                                                                 <input
                                                                     type="text"
                                                                     value={variable.value}
-                                                                    onChange={async (e) => {
-                                                                        const newVars = [...env.variables]
-                                                                        newVars[varIndex] = { ...variable, value: e.target.value }
-                                                                        await db.environments.update(parseInt(env.id), { variables: newVars })
-                                                                    }}
+                                                                    onChange={(e) => updateEnvironmentVariable(env.id, varIndex, variable.key, e.target.value, variable.enabled)}
                                                                     placeholder="value"
                                                                     className="w-full bg-transparent border border-gray-600 rounded px-2 py-1 focus:outline-none focus:border-accent-secondary font-mono text-xs"
                                                                 />
                                                             </td>
                                                             <td className="p-2">
                                                                 <button
-                                                                    onClick={async () => {
-                                                                        const newVars = env.variables.filter((_, i) => i !== varIndex)
-                                                                        await db.environments.update(parseInt(env.id), { variables: newVars })
-                                                                    }}
+                                                                    onClick={() => removeEnvironmentVariable(env.id, varIndex)}
                                                                     className="text-red-400 hover:text-red-300"
                                                                 >
                                                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1717,10 +1694,7 @@ function App() {
                                                 </tbody>
                                             </table>
                                             <button
-                                                onClick={async () => {
-                                                    const newVars = [...env.variables, { key: '', value: '', enabled: true }]
-                                                    await db.environments.update(parseInt(env.id), { variables: newVars })
-                                                }}
+                                                onClick={() => addEnvironmentVariable(env.id)}
                                                 className="w-full p-2 text-center text-sm text-accent-secondary hover:bg-bg-secondary transition-colors"
                                             >
                                                 + Add Variable
@@ -1766,31 +1740,31 @@ function App() {
                         if (!user?.id || !currentRequest) return
 
                         // Determine Target Parent
-                        let targetCollectionId: number | undefined = undefined
+                        let targetCollectionId: string | undefined = undefined
                         if (collectionId) {
-                            targetCollectionId = folderId ? parseInt(folderId) : parseInt(collectionId)
+                            targetCollectionId = folderId || collectionId
                         }
 
-                        // Check if existing (Numeric ID) or New (UUID)
-                        const isExisting = !isNaN(parseInt(currentRequest.id))
+                        // Check if existing (UUID)
+                        const isExisting = currentRequest.id && currentRequest.id.length > 0
 
                         try {
                             if (isExisting) {
                                 // Update existing request
-                                await db.requests.update(parseInt(currentRequest.id), {
+                                await db.updateRequest(user.id, currentRequest.id, {
                                     ...uiRequestToDbRequest(currentRequest, user.id, targetCollectionId),
-                                    collectionId: targetCollectionId,
+                                    collection_id: targetCollectionId,
                                     name: currentRequest.name // Ensure name is up to date
                                 })
                             } else {
                                 // Create new request
                                 const newId = await db.createRequest(user.id, {
                                     ...uiRequestToDbRequest(currentRequest, user.id, targetCollectionId),
-                                    collectionId: targetCollectionId
+                                    collection_id: targetCollectionId
                                 })
 
                                 // Update current request to use new ID
-                                const updated = { ...currentRequest, id: newId.toString() }
+                                const updated = { ...currentRequest, id: newId }
                                 setCurrentRequest(updated)
                                 setCurrentRequestId(updated.id)
                             }

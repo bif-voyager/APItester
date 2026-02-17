@@ -28,7 +28,7 @@ interface SidebarProps {
     onSelectStandaloneRequest?: (request: Request) => void
     onDeleteStandaloneRequest?: (requestId: string) => void
     onRenameStandaloneRequest?: (requestId: string, newName: string) => void
-    user?: { name: string; mode: 'user' | 'guest' } | null
+    user?: { name: string; email?: string } | null
     onLogout?: () => void
     openTabs?: Tab[]
 }
@@ -59,6 +59,7 @@ export default function Sidebar({
     user,
     onLogout,
     openTabs = [],
+    onLogoClick,
 }: SidebarProps) {
     const [editingCollection, setEditingCollection] = useState<string | null>(null)
     const [editName, setEditName] = useState('')
@@ -163,7 +164,7 @@ export default function Sidebar({
             {/* Header */}
             <div className="p-4 border-b border-gray-700">
                 <div className="flex items-center justify-between mb-3">
-                    <h2 className="text-lg font-bold">Collections</h2>
+                    <h2 className="text-lg font-bold" onClick={onLogoClick}>Collections</h2>
                     <div className="relative">
                         <button
                             onClick={() => setShowAddCollectionMenu(!showAddCollectionMenu)}
@@ -689,13 +690,12 @@ export default function Sidebar({
                 <div className="p-4 border-t border-gray-700 bg-bg-tertiary/30">
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
-                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${user.mode === 'guest' ? 'bg-gray-600 text-gray-200' : 'bg-accent-primary text-white'
-                                }`}>
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold bg-accent-primary text-white`}>
                                 {user.name.charAt(0).toUpperCase()}
                             </div>
                             <div className="overflow-hidden">
                                 <div className="text-sm font-semibold truncate text-text-primary">{user.name}</div>
-                                <div className="text-xs text-text-tertiary capitalize">{user.mode}</div>
+                                <div className="text-xs text-text-tertiary">{user.email}</div>
                             </div>
                         </div>
                         <button
