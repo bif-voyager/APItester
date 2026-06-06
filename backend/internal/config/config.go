@@ -14,6 +14,7 @@ type Config struct {
 	MaxResponseBodyBytes int64
 	MaxRedirects         int
 	MaxBulkConcurrency   int
+	MaxBulkConnections   int
 }
 
 // Load reads configuration from environment variables with sensible defaults.
@@ -24,7 +25,8 @@ func Load() *Config {
 		DefaultTimeoutMs:     getEnvInt("DEFAULT_TIMEOUT_MS", 15000),
 		MaxResponseBodyBytes: int64(getEnvInt("MAX_RESPONSE_BODY_BYTES", 5242880)), // 5 MB
 		MaxRedirects:         getEnvInt("MAX_REDIRECTS", 5),
-		MaxBulkConcurrency:   getEnvInt("MAX_BULK_CONCURRENCY", 500),
+		MaxBulkConcurrency:   getEnvInt("MAX_BULK_CONCURRENCY", 1000),
+		MaxBulkConnections:   getEnvInt("MAX_BULK_CONNECTIONS", 64),
 	}
 }
 

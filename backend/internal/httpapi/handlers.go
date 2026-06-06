@@ -113,15 +113,19 @@ func HandleBulkRequest(cfg *config.Config) http.HandlerFunc {
 
 		log.Printf("[bulk] %s %s × %d concurrent", bulkReq.Request.Method, bulkReq.Request.URL, bulkReq.Concurrency)
 
-		// Worker pool size: limit actual simultaneous connections
-		// to prevent OS socket exhaustion
-		maxWorkers := 50
-		if bulkReq.Concurrency < maxWorkers {
-			maxWorkers = bulkReq.Concurrency
+		// Every requested slot gets its own worker. TCP/TLS connections are
+		// capped separately and reused to avoid exhausting the target backlog.
+		maxWorkers := bulkReq.Concurrency
+		maxConnections := cfg.MaxBulkConnections
+		if maxConnections < 1 {
+			maxConnections = 64
+		}
+		if maxConnections > bulkReq.Concurrency {
+			maxConnections = bulkReq.Concurrency
 		}
 
 		// Create a shared HTTP client with high-capacity transport
-		bulkTransport := executor.NewBulkTransport(maxWorkers)
+		bulkTransport := executor.NewBulkTransport(maxConnections)
 		defer bulkTransport.CloseIdleConnections()
 
 		bulkClient := &http.Client{
@@ -135,46 +139,10 @@ func HandleBulkRequest(cfg *config.Config) http.HandlerFunc {
 			bulkTimeoutMs = 30000 // minimum 30 seconds for bulk
 		}
 
-		// Execute with semaphore-based worker pool
-		results := make([]executor.BulkResultItem, bulkReq.Concurrency)
-		var wg sync.WaitGroup
-		semaphore := make(chan struct{}, maxWorkers)
-
 		totalStart := time.Now()
-
-		for i := 0; i < bulkReq.Concurrency; i++ {
-			wg.Add(1)
-			go func(index int) {
-				defer wg.Done()
-
-				// Acquire semaphore slot (blocks until a slot is free)
-				semaphore <- struct{}{}
-				defer func() { <-semaphore }()
-
-				// Each goroutine gets its own copy of the request
-				reqCopy := bulkReq.Request
-				result := executor.ExecuteWithClient(&reqCopy, bulkClient, cfg.MaxResponseBodyBytes, bulkTimeoutMs, cfg.MaxRedirects)
-
-				item := executor.BulkResultItem{
-					Index:      index,
-					DurationMs: result.DurationMs,
-					OK:         result.OK,
-				}
-
-				if result.OK {
-					item.Status = result.Status
-					item.StatusText = result.StatusText
-					item.SizeBytes = result.SizeBytes
-				} else if result.Error != nil {
-					item.Error = result.Error.Message
-				}
-
-				// Direct index assignment is safe (each goroutine writes to its own slot)
-				results[index] = item
-			}(i)
-		}
-
-		wg.Wait()
+		results := runBulkRequests(bulkReq.Request, bulkReq.Concurrency, maxWorkers, func(req *executor.ExecutorRequest) *executor.ExecutorResponse {
+			return executor.ExecuteBulkWithClient(req, bulkClient, cfg.MaxResponseBodyBytes, bulkTimeoutMs, cfg.MaxRedirects)
+		})
 		totalTime := time.Since(totalStart).Milliseconds()
 
 		// Count successes
@@ -185,8 +153,8 @@ func HandleBulkRequest(cfg *config.Config) http.HandlerFunc {
 			}
 		}
 
-		log.Printf("[bulk] completed %d requests in %d ms (%d ok, %d failed, %d workers)",
-			bulkReq.Concurrency, totalTime, successCount, bulkReq.Concurrency-successCount, maxWorkers)
+		log.Printf("[bulk] completed %d requests in %d ms (%d ok, %d failed, %d workers, %d connections)",
+			bulkReq.Concurrency, totalTime, successCount, bulkReq.Concurrency-successCount, maxWorkers, maxConnections)
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(executor.BulkExecutorResponse{
@@ -196,6 +164,61 @@ func HandleBulkRequest(cfg *config.Config) http.HandlerFunc {
 			TotalTimeMs:   totalTime,
 		})
 	}
+}
+
+type bulkExecuteFunc func(req *executor.ExecutorRequest) *executor.ExecutorResponse
+
+func runBulkRequests(request executor.ExecutorRequest, concurrency int, maxWorkers int, execute bulkExecuteFunc) []executor.BulkResultItem {
+	if maxWorkers < 1 {
+		maxWorkers = 1
+	}
+	if maxWorkers > concurrency {
+		maxWorkers = concurrency
+	}
+
+	results := make([]executor.BulkResultItem, concurrency)
+	var wg sync.WaitGroup
+	var ready sync.WaitGroup
+	semaphore := make(chan struct{}, maxWorkers)
+	startGate := make(chan struct{})
+
+	ready.Add(concurrency)
+	for i := 0; i < concurrency; i++ {
+		wg.Add(1)
+		go func(index int) {
+			defer wg.Done()
+
+			ready.Done()
+			<-startGate
+
+			semaphore <- struct{}{}
+			defer func() { <-semaphore }()
+
+			reqCopy := request
+			result := execute(&reqCopy)
+			item := executor.BulkResultItem{
+				Index:      index,
+				DurationMs: result.DurationMs,
+				OK:         result.OK,
+			}
+
+			if result.OK {
+				item.Status = result.Status
+				item.StatusText = result.StatusText
+				item.SizeBytes = result.SizeBytes
+			} else if result.Error != nil {
+				item.Error = result.Error.Message
+			}
+
+			results[index] = item
+		}(i)
+	}
+
+	ready.Wait()
+	close(startGate)
+	wg.Wait()
+
+	return results
 }
 
 // writeError writes a JSON error response.
@@ -223,4 +246,3 @@ func writeBulkError(w http.ResponseWriter, statusCode int, errType, message stri
 		},
 	})
 }
-

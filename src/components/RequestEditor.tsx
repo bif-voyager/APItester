@@ -186,9 +186,9 @@ export default function RequestEditor({
                                     <input
                                         type="number"
                                         min="1"
-                                        max="500"
+                                        max="1000"
                                         value={bulkCount}
-                                        onChange={(e) => setBulkCount(Math.max(1, Math.min(500, parseInt(e.target.value) || 1)))}
+                                        onChange={(e) => setBulkCount(Math.max(1, Math.min(1000, parseInt(e.target.value) || 1)))}
                                         onKeyDown={(e) => {
                                             if (e.key === 'Enter') {
                                                 onBulkSend(request, bulkCount)
@@ -212,7 +212,7 @@ export default function RequestEditor({
                                     </button>
                                 </div>
                                 <div className="flex gap-1.5 mt-2">
-                                    {[10, 50, 100, 200].map(n => (
+                                    {[10, 100, 500, 1000].map(n => (
                                         <button
                                             key={n}
                                             onClick={() => setBulkCount(n)}

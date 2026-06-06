@@ -44,8 +44,8 @@ func NewBulkTransport(maxConns int) *http.Transport {
 			Timeout:   30 * time.Second,
 			KeepAlive: 30 * time.Second,
 		}).DialContext,
-		DisableKeepAlives:   false,
-		ForceAttemptHTTP2:   true,
+		DisableKeepAlives: false,
+		ForceAttemptHTTP2: true,
 	}
 }
 
@@ -61,6 +61,16 @@ func Execute(req *ExecutorRequest, maxResponseBytes int64, defaultTimeoutMs int,
 // If client is nil, a new client is created (single-request mode).
 // For bulk mode, pass a shared client with BulkTransport for connection reuse.
 func ExecuteWithClient(req *ExecutorRequest, client *http.Client, maxResponseBytes int64, defaultTimeoutMs int, maxRedirects int) *ExecutorResponse {
+	return executeWithClient(req, client, maxResponseBytes, defaultTimeoutMs, maxRedirects, true)
+}
+
+// ExecuteBulkWithClient performs a bulk request without retaining the response
+// body in memory. Status, timing and response size are still collected.
+func ExecuteBulkWithClient(req *ExecutorRequest, client *http.Client, maxResponseBytes int64, defaultTimeoutMs int, maxRedirects int) *ExecutorResponse {
+	return executeWithClient(req, client, maxResponseBytes, defaultTimeoutMs, maxRedirects, false)
+}
+
+func executeWithClient(req *ExecutorRequest, client *http.Client, maxResponseBytes int64, defaultTimeoutMs int, maxRedirects int, captureBody bool) *ExecutorResponse {
 	start := time.Now()
 
 	// 1. Validate method
@@ -174,16 +184,35 @@ func ExecuteWithClient(req *ExecutorRequest, client *http.Client, maxResponseByt
 	}
 	defer resp.Body.Close()
 
-	// 10. Read response body with limit
+	// 10. Read response body with limit. Bulk mode only counts bytes to avoid
+	// retaining up to N response bodies in memory at the same time.
 	limitedReader := io.LimitReader(resp.Body, maxResponseBytes+1)
-	bodyBytes, err := io.ReadAll(limitedReader)
-	if err != nil {
-		return errorResponse("internal_error", fmt.Sprintf("Failed to read response body: %v", err), duration)
-	}
+	var body string
+	var sizeBytes int64
+	var truncated bool
 
-	truncated := int64(len(bodyBytes)) > maxResponseBytes
-	if truncated {
-		bodyBytes = bodyBytes[:maxResponseBytes]
+	if captureBody {
+		bodyBytes, readErr := io.ReadAll(limitedReader)
+		if readErr != nil {
+			return errorResponse("internal_error", fmt.Sprintf("Failed to read response body: %v", readErr), duration)
+		}
+
+		truncated = int64(len(bodyBytes)) > maxResponseBytes
+		if truncated {
+			bodyBytes = bodyBytes[:maxResponseBytes]
+		}
+		body = string(bodyBytes)
+		sizeBytes = int64(len(bodyBytes))
+	} else {
+		readBytes, readErr := io.Copy(io.Discard, limitedReader)
+		if readErr != nil {
+			return errorResponse("internal_error", fmt.Sprintf("Failed to read response body: %v", readErr), duration)
+		}
+		truncated = readBytes > maxResponseBytes
+		sizeBytes = readBytes
+		if truncated {
+			sizeBytes = maxResponseBytes
+		}
 	}
 
 	// 11. Collect response headers
@@ -202,9 +231,9 @@ func ExecuteWithClient(req *ExecutorRequest, client *http.Client, maxResponseByt
 		Status:        resp.StatusCode,
 		StatusText:    http.StatusText(resp.StatusCode),
 		Headers:       respHeaders,
-		Body:          string(bodyBytes),
+		Body:          body,
 		ContentType:   contentType,
-		SizeBytes:     int64(len(bodyBytes)),
+		SizeBytes:     sizeBytes,
 		DurationMs:    duration.Milliseconds(),
 		FinalURL:      finalURL,
 		RedirectCount: redirectCount,
@@ -241,4 +270,3 @@ func errorResponse(errType, message string, duration time.Duration) *ExecutorRes
 		},
 	}
 }
-

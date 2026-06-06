@@ -5,7 +5,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"apitester-executor/internal/config"
 	"apitester-executor/internal/executor"
@@ -18,6 +21,7 @@ func testConfig() *config.Config {
 		MaxResponseBodyBytes: 1024,
 		MaxRedirects:         5,
 		MaxBulkConcurrency:   10,
+		MaxBulkConnections:   4,
 	}
 }
 
@@ -113,6 +117,53 @@ func TestHandleBulkRequestRejectsExcessiveConcurrency(t *testing.T) {
 	}
 	if response.Error == nil || response.Error.Type != "invalid_request" {
 		t.Fatalf("unexpected bulk error response: %#v", response)
+	}
+}
+
+func TestHandleBulkRequestRunsOneThousandRequestsConcurrently(t *testing.T) {
+	const concurrency = 1000
+
+	var active int32
+	var peak int32
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+
+	results := runBulkRequests(
+		executor.ExecutorRequest{Method: http.MethodGet, URL: "http://example.test"},
+		concurrency,
+		concurrency,
+		func(_ *executor.ExecutorRequest) *executor.ExecutorResponse {
+			current := atomic.AddInt32(&active, 1)
+			defer atomic.AddInt32(&active, -1)
+
+			for {
+				previous := atomic.LoadInt32(&peak)
+				if current <= previous || atomic.CompareAndSwapInt32(&peak, previous, current) {
+					break
+				}
+			}
+
+			if current == concurrency {
+				releaseOnce.Do(func() { close(release) })
+			}
+
+			select {
+			case <-release:
+			case <-time.After(3 * time.Second):
+			}
+
+			return &executor.ExecutorResponse{
+				OK:     true,
+				Status: http.StatusNoContent,
+			}
+		},
+	)
+
+	if got := atomic.LoadInt32(&peak); got != concurrency {
+		t.Fatalf("expected %d simultaneous requests, peak was %d", concurrency, got)
+	}
+	if len(results) != concurrency {
+		t.Fatalf("expected %d results, got %d", concurrency, len(results))
 	}
 }
 
