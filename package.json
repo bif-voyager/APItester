@@ -9,10 +9,16 @@
     },
     "scripts": {
         "dev": "vite --port 5173 --strictPort",
+        "test": "npm run test:frontend && npm run test:backend",
+        "test:frontend": "vitest run",
+        "test:frontend:watch": "vitest",
+        "test:backend": "go -C backend test ./...",
+        "prebuild": "npm test",
         "build": "tsc && vite build",
         "predeploy": "npm run build",
         "deploy": "gh-pages -d dist",
         "electron:dev": "cross-env ELECTRON=1 vite --port 5173 --strictPort",
+        "preelectron:build": "npm test",
         "electron:build": "cross-env ELECTRON=1 tsc && cross-env ELECTRON=1 vite build && electron-builder"
     },
     "dependencies": {
@@ -42,6 +48,7 @@
         "typescript": "^5.3.3",
         "vite": "^5.0.11",
         "vite-plugin-electron": "^0.29.0",
+        "vitest": "^1.6.1",
         "wait-on": "^7.2.0"
     },
     "build": {
