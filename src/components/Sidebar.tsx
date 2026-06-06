@@ -24,6 +24,7 @@ interface SidebarProps {
     onRunCollection: (collectionId: string) => void
     onExportCollection?: (collectionId: string) => void
     onNewBlankRequest?: () => void
+    onImportAsStandalone?: (request: Partial<Request>) => void
     standaloneRequests?: Request[]
     onSelectStandaloneRequest?: (request: Request) => void
     onDeleteStandaloneRequest?: (requestId: string) => void
@@ -31,6 +32,7 @@ interface SidebarProps {
     user?: { name: string; email?: string } | null
     onLogout?: () => void
     openTabs?: Tab[]
+    onLogoClick?: () => void
 }
 
 export default function Sidebar({
@@ -52,6 +54,7 @@ export default function Sidebar({
     onRunCollection,
     onExportCollection,
     onNewBlankRequest,
+    onImportAsStandalone,
     standaloneRequests = [],
     onSelectStandaloneRequest,
     onDeleteStandaloneRequest,
@@ -662,11 +665,11 @@ export default function Sidebar({
                                         if (parsed && parsed.url) {
                                             if (selectedCollectionId) {
                                                 onImportRequest(selectedCollectionId, parsed)
+                                            } else if (onImportAsStandalone) {
+                                                // Open directly as standalone request tab
+                                                onImportAsStandalone(parsed)
                                             } else {
-                                                // Create new collection with this request
-                                                const requestName = parsed.name || parsed.url?.split('/').pop() || 'Imported Request'
-                                                onAddCollection(requestName)
-                                                alert('Collection created! Please select it and import again, or select an existing collection.')
+                                                alert('Please select a target collection.')
                                             }
                                             setShowImportModal(false)
                                             setCurlInput('')

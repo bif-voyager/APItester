@@ -1,10 +1,5 @@
 import { Response } from '../types'
 import JsonViewer from './JsonViewer'
-
-interface ResponseViewerProps {
-    response: Response | null
-}
-
 import { useState } from 'react'
 
 interface ResponseViewerProps {

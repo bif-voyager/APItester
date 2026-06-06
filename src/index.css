@@ -59,14 +59,14 @@ select option:checked {
    ======================================== */
 
 [data-theme="light"] {
-  --light-bg-main: #f8f7f4;
-  --light-bg-sidebar: #f0efec;
+  --light-bg-main: #f9fafb;
+  --light-bg-sidebar: #f3f4f6;
   --light-bg-card: #ffffff;
-  --light-bg-hover: #e8e7e3;
-  --light-text-primary: #1f1f1f;
-  --light-text-secondary: #555555;
-  --light-text-muted: #888888;
-  --light-border: #d4d2cb;
+  --light-bg-hover: #e5e7eb;
+  --light-text-primary: #111827;
+  --light-text-secondary: #4b5563;
+  --light-text-muted: #9ca3af;
+  --light-border: #d1d5db;
   --light-accent-blue: #2563eb;
   --light-accent-orange: #ea580c;
   --light-selected-bg: #dbeafe;
@@ -85,6 +85,27 @@ select option:checked {
   background-color: var(--light-bg-hover) !important;
 }
 
+/* === Dark backgrounds → light equivalents === */
+[data-theme="light"] .bg-gray-800 {
+  background-color: #f3f4f6 !important;
+}
+
+[data-theme="light"] .bg-gray-900 {
+  background-color: #e5e7eb !important;
+}
+
+[data-theme="light"] .bg-gray-700 {
+  background-color: #e5e7eb !important;
+}
+
+[data-theme="light"] [class*="bg-bg-primary/"] {
+  background-color: rgba(249, 250, 251, 0.3) !important;
+}
+
+[data-theme="light"] [class*="bg-bg-tertiary/"] {
+  background-color: rgba(229, 231, 235, 0.5) !important;
+}
+
 /* === Text colors === */
 [data-theme="light"] .text-text-primary,
 [data-theme="light"] h1,
@@ -101,10 +122,24 @@ select option:checked {
   color: var(--light-text-muted) !important;
 }
 
+/* Fix white text on light backgrounds */
+[data-theme="light"] .text-white {
+  color: #ffffff !important;
+}
+
+[data-theme="light"] .text-gray-400,
+[data-theme="light"] .text-gray-500 {
+  color: #6b7280 !important;
+}
+
 /* === Borders === */
 [data-theme="light"] .border-gray-700,
 [data-theme="light"] .border-gray-600 {
   border-color: var(--light-border) !important;
+}
+
+[data-theme="light"] [class*="border-gray-700/"] {
+  border-color: rgba(209, 213, 219, 0.5) !important;
 }
 
 /* === Hover states === */
@@ -117,7 +152,7 @@ select option:checked {
   background-color: #efeee9 !important;
 }
 
-/* === Selected items (sidebar requests) === */
+/* === Selected items === */
 [data-theme="light"] .bg-accent-secondary\/20,
 [data-theme="light"] [class*="bg-accent-secondary/"] {
   background-color: var(--light-selected-bg) !important;
@@ -125,6 +160,20 @@ select option:checked {
 
 [data-theme="light"] .bg-accent-secondary {
   background-color: var(--light-accent-blue) !important;
+}
+
+/* === Tabs === */
+[data-theme="light"] .border-b-accent-secondary {
+  border-bottom-color: var(--light-accent-blue) !important;
+}
+
+[data-theme="light"] .border-accent-primary {
+  border-color: var(--light-accent-orange) !important;
+}
+
+[data-theme="light"] [class*="border-accent-primary/"],
+[data-theme="light"] [class*="border-accent-secondary/"] {
+  border-color: rgba(37, 99, 235, 0.3) !important;
 }
 
 /* === Inputs and textareas === */
@@ -146,6 +195,12 @@ select option:checked {
   border-color: var(--light-accent-blue) !important;
 }
 
+/* === Select dropdown options === */
+[data-theme="light"] select option {
+  background-color: #ffffff;
+  color: var(--light-text-primary);
+}
+
 /* === Buttons === */
 [data-theme="light"] button {
   color: var(--light-text-primary);
@@ -160,6 +215,10 @@ select option:checked {
   background-color: #c2410c !important;
 }
 
+[data-theme="light"] [class*="hover:bg-accent-primary/"]:hover {
+  background-color: rgba(234, 88, 12, 0.15) !important;
+}
+
 /* === Accent text colors === */
 [data-theme="light"] .text-accent-primary {
   color: var(--light-accent-orange) !important;
@@ -169,30 +228,82 @@ select option:checked {
   color: var(--light-accent-blue) !important;
 }
 
-/* === Dropdowns and menus === */
-[data-theme="light"] [class*="shadow-lg"] {
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06) !important;
+/* === Method badge text (make vibrant on light) === */
+[data-theme="light"] .text-green-400 {
+  color: #16a34a !important;
 }
 
-/* === Error states === */
-[data-theme="light"] .bg-red-500\/10,
-[data-theme="light"] [class*="bg-red-"] {
-  background-color: #fef2f2 !important;
+[data-theme="light"] .text-green-500 {
+  color: #22c55e !important;
 }
 
-[data-theme="light"] .text-red-400,
-[data-theme="light"] .text-red-500 {
+[data-theme="light"] .text-orange-400 {
+  color: #ea580c !important;
+}
+
+[data-theme="light"] .text-orange-500 {
+  color: #f97316 !important;
+}
+
+[data-theme="light"] .text-blue-400 {
+  color: #2563eb !important;
+}
+
+[data-theme="light"] .text-blue-500 {
+  color: #3b82f6 !important;
+}
+
+[data-theme="light"] .text-purple-400 {
+  color: #9333ea !important;
+}
+
+[data-theme="light"] .text-purple-500 {
+  color: #a855f7 !important;
+}
+
+[data-theme="light"] .text-red-400 {
   color: #dc2626 !important;
 }
 
-/* === Code/JSON editor area === */
-[data-theme="light"] pre,
-[data-theme="light"] code {
-  background-color: var(--light-bg-card) !important;
-  color: var(--light-text-primary) !important;
+[data-theme="light"] .text-red-500 {
+  color: #ef4444 !important;
 }
 
-/* === Method badges (keep original colors) === */
+[data-theme="light"] .text-cyan-400 {
+  color: #0891b2 !important;
+}
+
+[data-theme="light"] .text-yellow-400 {
+  color: #ca8a04 !important;
+}
+
+/* === Method badge backgrounds (semi-transparent on light) === */
+[data-theme="light"] .bg-green-500\/20,
+[data-theme="light"] [class*="bg-green-500/"] {
+  background-color: rgba(22, 163, 74, 0.12) !important;
+}
+
+[data-theme="light"] .bg-orange-500\/20,
+[data-theme="light"] [class*="bg-orange-500/"] {
+  background-color: rgba(234, 88, 12, 0.12) !important;
+}
+
+[data-theme="light"] .bg-blue-500\/20,
+[data-theme="light"] [class*="bg-blue-500/"] {
+  background-color: rgba(37, 99, 235, 0.12) !important;
+}
+
+[data-theme="light"] .bg-red-500\/20,
+[data-theme="light"] [class*="bg-red-500/"] {
+  background-color: rgba(220, 38, 38, 0.12) !important;
+}
+
+[data-theme="light"] .bg-purple-500\/20,
+[data-theme="light"] [class*="bg-purple-500/"] {
+  background-color: rgba(147, 51, 234, 0.12) !important;
+}
+
+/* === Solid badge backgrounds === */
 [data-theme="light"] .bg-green-500 {
   background-color: #22c55e !important;
 }
@@ -213,37 +324,81 @@ select option:checked {
   background-color: #a855f7 !important;
 }
 
-/* === Method text colors (sidebar) === */
-[data-theme="light"] .text-green-500 {
-  color: #22c55e !important;
+/* === Bulk results / dark overlays on light === */
+[data-theme="light"] [class*="bg-green-900/"],
+[data-theme="light"] .hover\:bg-green-900\/10:hover {
+  background-color: rgba(22, 163, 74, 0.06) !important;
 }
 
-[data-theme="light"] .text-green-400 {
-  color: #4ade80 !important;
+[data-theme="light"] [class*="bg-red-900/"],
+[data-theme="light"] .hover\:bg-red-900\/10:hover {
+  background-color: rgba(220, 38, 38, 0.06) !important;
 }
 
-[data-theme="light"] .text-orange-400 {
-  color: #fb923c !important;
+[data-theme="light"] [class*="bg-blue-900/"] {
+  background-color: rgba(37, 99, 235, 0.06) !important;
 }
 
-[data-theme="light"] .text-orange-500 {
-  color: #f97316 !important;
+[data-theme="light"] [class*="bg-orange-900/"] {
+  background-color: rgba(234, 88, 12, 0.06) !important;
 }
 
-[data-theme="light"] .text-blue-400 {
-  color: #60a5fa !important;
+[data-theme="light"] [class*="bg-purple-900/"] {
+  background-color: rgba(147, 51, 234, 0.06) !important;
 }
 
-[data-theme="light"] .text-blue-500 {
-  color: #3b82f6 !important;
+/* === Bulk borders with dark colors === */
+[data-theme="light"] [class*="border-green-600/"] {
+  border-color: rgba(22, 163, 74, 0.3) !important;
 }
 
-[data-theme="light"] .text-purple-400 {
-  color: #c084fc !important;
+[data-theme="light"] [class*="border-red-600/"] {
+  border-color: rgba(220, 38, 38, 0.3) !important;
 }
 
-[data-theme="light"] .text-purple-500 {
-  color: #a855f7 !important;
+[data-theme="light"] [class*="border-blue-600/"] {
+  border-color: rgba(37, 99, 235, 0.3) !important;
+}
+
+/* === Accent background tints === */
+[data-theme="light"] [class*="bg-accent-primary/"] {
+  background-color: rgba(234, 88, 12, 0.1) !important;
+}
+
+/* === Shadows === */
+[data-theme="light"] [class*="shadow-lg"] {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04) !important;
+}
+
+[data-theme="light"] [class*="shadow-xl"] {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1), 0 4px 8px rgba(0, 0, 0, 0.06) !important;
+}
+
+/* === Modals === */
+[data-theme="light"] .bg-black\/70 {
+  background-color: rgba(0, 0, 0, 0.4) !important;
+}
+
+[data-theme="light"] .bg-black\/50 {
+  background-color: rgba(0, 0, 0, 0.3) !important;
+}
+
+/* === Code/JSON editor === */
+[data-theme="light"] pre,
+[data-theme="light"] code {
+  background-color: var(--light-bg-card) !important;
+  color: var(--light-text-primary) !important;
+}
+
+/* === Ring/focus colors === */
+[data-theme="light"] .ring-accent-primary,
+[data-theme="light"] .focus\:ring-accent-primary:focus {
+  --tw-ring-color: var(--light-accent-orange) !important;
+}
+
+[data-theme="light"] .ring-accent-secondary,
+[data-theme="light"] .focus\:ring-accent-secondary:focus {
+  --tw-ring-color: var(--light-accent-blue) !important;
 }
 
 /* === Scrollbars === */
@@ -256,6 +411,10 @@ select option:checked {
   background: var(--light-bg-sidebar);
 }
 
+[data-theme="light"] ::-webkit-scrollbar-corner {
+  background: var(--light-bg-sidebar);
+}
+
 [data-theme="light"] ::-webkit-scrollbar-thumb {
   background: #c5c3bc;
   border-radius: 4px;
@@ -265,12 +424,17 @@ select option:checked {
   background: #a8a59e;
 }
 
-/* === Tabs === */
-[data-theme="light"] .border-accent-primary {
-  border-color: var(--light-accent-orange) !important;
-}
-
 /* === Checkbox/radio === */
 [data-theme="light"] input[type="checkbox"] {
   accent-color: var(--light-accent-blue);
+}
+
+/* === Gradient backgrounds used in charts === */
+[data-theme="light"] .bg-gradient-to-r {
+  opacity: 0.85;
+}
+
+/* === Opacity helpers on light === */
+[data-theme="light"] .opacity-30 {
+  opacity: 0.15;
 }

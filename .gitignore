@@ -36,7 +36,12 @@ lerna-debug.log*
 
 # Local dev
 *.local
+.env
 
 # Electron Build Artifacts
 release/
 dist-electron/
+
+# Backend build artifacts
+backend/apitester-executor
+backend/apitester-executor.exe

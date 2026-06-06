@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { Request, KeyValue } from '../types'
 import EditableJsonViewer from './EditableJsonViewer'
 import MethodDropdown from './MethodDropdown'
@@ -8,16 +8,32 @@ interface RequestEditorProps {
     request: Request | null
     onSendRequest: (request: Request) => void
     onUpdateRequest: (request: Request) => void
+    onBulkSend?: (request: Request, concurrency: number) => void
 }
 
 export default function RequestEditor({
     request,
     onSendRequest,
-    onUpdateRequest
+    onUpdateRequest,
+    onBulkSend
 }: RequestEditorProps) {
     const [activeTab, setActiveTab] = useState('params')
     const [openDropdown, setOpenDropdown] = useState<number | null>(null)
     const [urlFocused, setUrlFocused] = useState(false)
+    const [showBulkPopover, setShowBulkPopover] = useState(false)
+    const [bulkCount, setBulkCount] = useState(10)
+    const bulkPopoverRef = useRef<HTMLDivElement>(null)
+
+    // Close bulk popover on outside click
+    useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            if (bulkPopoverRef.current && !bulkPopoverRef.current.contains(e.target as Node)) {
+                setShowBulkPopover(false)
+            }
+        }
+        document.addEventListener('mousedown', handleClickOutside)
+        return () => document.removeEventListener('mousedown', handleClickOutside)
+    }, [])
 
     const commonHeaders = [
         'Accept', 'Accept-Charset', 'Accept-Encoding', 'Accept-Language',
@@ -77,7 +93,7 @@ export default function RequestEditor({
     }
 
     const deleteRow = (field: 'params' | 'headers', index: number) => {
-        const newArray = request[field].filter((_, i) => i !== index)
+        const newArray = request[field].filter((_: KeyValue, i: number) => i !== index)
         updateRequest({ [field]: newArray })
     }
 
@@ -136,6 +152,83 @@ export default function RequestEditor({
                     </svg>
                     Send
                 </button>
+
+                {/* Bulk Send Button */}
+                {onBulkSend && (
+                    <div className="relative" ref={bulkPopoverRef}>
+                        <button
+                            onClick={() => setShowBulkPopover(!showBulkPopover)}
+                            className={`px-3 py-2 rounded font-medium transition-colors flex items-center gap-1.5 text-sm ${showBulkPopover
+                                ? 'bg-purple-600 text-white'
+                                : 'bg-purple-600/20 text-purple-400 hover:bg-purple-600/40 border border-purple-500/40 hover:border-purple-500/70'
+                                }`}
+                            title="Bulk Send — fire N concurrent requests"
+                        >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                            </svg>
+                            Bulk
+                        </button>
+
+                        {/* Popover */}
+                        {showBulkPopover && (
+                            <div className="absolute right-0 top-full mt-2 w-64 bg-bg-secondary border border-gray-600 rounded-lg shadow-2xl z-50 p-4">
+                                <div className="flex items-center gap-2 mb-3">
+                                    <svg className="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                    </svg>
+                                    <span className="text-sm font-bold text-text-primary">Concurrent Requests</span>
+                                </div>
+                                <p className="text-xs text-text-tertiary mb-3">
+                                    Fire N copies of this request simultaneously
+                                </p>
+                                <div className="flex gap-2">
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        max="500"
+                                        value={bulkCount}
+                                        onChange={(e) => setBulkCount(Math.max(1, Math.min(500, parseInt(e.target.value) || 1)))}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                onBulkSend(request, bulkCount)
+                                                setShowBulkPopover(false)
+                                            }
+                                        }}
+                                        className="flex-1 px-3 py-1.5 bg-bg-primary border border-gray-600 rounded text-sm focus:outline-none focus:border-purple-500 text-center"
+                                        autoFocus
+                                    />
+                                    <button
+                                        onClick={() => {
+                                            onBulkSend(request, bulkCount)
+                                            setShowBulkPopover(false)
+                                        }}
+                                        className="px-4 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded text-sm font-medium transition-colors flex items-center gap-1"
+                                    >
+                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                        </svg>
+                                        Go
+                                    </button>
+                                </div>
+                                <div className="flex gap-1.5 mt-2">
+                                    {[10, 50, 100, 200].map(n => (
+                                        <button
+                                            key={n}
+                                            onClick={() => setBulkCount(n)}
+                                            className={`flex-1 py-1 text-xs rounded transition-colors ${bulkCount === n
+                                                ? 'bg-purple-600/30 text-purple-300 border border-purple-500/50'
+                                                : 'bg-bg-tertiary text-text-tertiary hover:text-text-secondary hover:bg-bg-primary'
+                                                }`}
+                                        >
+                                            {n}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
 
             {/* Tabs */}

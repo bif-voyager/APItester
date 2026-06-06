@@ -84,9 +84,27 @@ export interface RunResult {
     iteration?: number
 }
 
+export interface BulkResultItem {
+    index: number
+    status: number
+    statusText: string
+    durationMs: number
+    sizeBytes: number
+    ok: boolean
+    error?: string
+}
+
+export interface BulkResponse {
+    ok: boolean
+    totalRequests: number
+    results: BulkResultItem[]
+    totalTimeMs: number
+    error?: { type: string; message: string }
+}
+
 export interface Tab {
     id: string
-    type: 'request' | 'run'
+    type: 'request' | 'run' | 'bulk'
     title: string
     requestId?: string
     collectionId?: string
@@ -98,4 +116,7 @@ export interface Tab {
         config: any
         requests: any
     }
+    bulkResponse?: BulkResponse | null
+    bulkRequest?: Request
+    bulkConcurrency?: number
 }

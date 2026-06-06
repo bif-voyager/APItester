@@ -10,9 +10,10 @@ import AuthPage from './components/AuthPage'
 import RunnerConfiguration, { RunnerConfig } from './components/RunnerConfiguration'
 import ConfirmDialog, { ConfirmDialogProps } from './components/ConfirmDialog'
 import SaveRequestDialog from './components/SaveRequestDialog'
+import BulkResultsCharts from './components/BulkResultsCharts'
 import { db, useUserEnvironments, useUserCollections, useUserRequests } from './db/db'
 import { buildCollectionTree, uiRequestToDbRequest, saveCollectionToDb } from './db/dbConverters'
-import type { Collection, CollectionItem, Request, Response, Environment, EnvironmentVariable, HistoryItem, Tab, RunResult } from './types'
+import type { Collection, CollectionItem, Request, Environment, EnvironmentVariable, HistoryItem, Tab, RunResult } from './types'
 import {
     generateId,
     // findItemInTree,
@@ -27,6 +28,7 @@ import {
 
 import { getDefaultHeadersForMethod } from './utils/httpHelpers'
 import { supabase } from './supabaseClient'
+import { sendViaExecutor, sendBulkViaExecutor } from './services/requestExecutor'
 
 function App() {
     const [user, setUser] = useState<{ id: string; email?: string; name: string } | null>(null)
@@ -599,136 +601,56 @@ function App() {
         // Find tab by requestId match (works for both standalone and collection tabs)
         const findTab = (t: Tab) => t.requestId === request.id || t.request?.id === request.id
 
-        try {
-            setOpenTabs(prev => prev.map(t =>
-                findTab(t) ? { ...t, response: { loading: true } } : t
-            ))
+        // Set loading state
+        setOpenTabs(prev => prev.map(t =>
+            findTab(t) ? { ...t, response: { loading: true } } : t
+        ))
 
-            // Build URL with params (only enabled ones)
-            // Apply environment variable substitution
-            let rawUrl = substituteVariables(request.url).trim()
-            if (!rawUrl) {
-                throw new Error('Invalid URL')
-            }
-            // Auto-detect protocol: if URL doesn't start with http:// or https://, add https://
-            if (!rawUrl.startsWith('http://') && !rawUrl.startsWith('https://')) {
-                rawUrl = 'https://' + rawUrl
-            }
-            const url = new URL(rawUrl)
-            request.params
-                .filter((param) => param.enabled !== false && param.key)
-                .forEach((param) => {
-                    url.searchParams.append(
-                        substituteVariables(param.key),
-                        substituteVariables(param.value)
-                    )
-                })
+        // Send via Go backend executor
+        const responseData = await sendViaExecutor(request, substituteVariables)
 
-            // Build headers (only enabled ones)
-            const headers: Record<string, string> = {}
-            request.headers
-                .filter((header) => header.enabled !== false && header.key)
-                .forEach((header) => {
-                    headers[substituteVariables(header.key)] = substituteVariables(header.value)
-                })
+        // Update tab with response
+        setOpenTabs(prev => prev.map(t =>
+            findTab(t) ? { ...t, response: responseData } : t
+        ))
 
-            // Add Authorization header
-            if (request.auth) {
-                if (request.auth.type === 'bearer' && request.auth.bearerToken) {
-                    headers['Authorization'] = `Bearer ${substituteVariables(request.auth.bearerToken)} `
-                } else if (request.auth.type === 'basic' && request.auth.basicUsername) {
-                    const credentials = btoa(`${substituteVariables(request.auth.basicUsername)}:${substituteVariables(request.auth.basicPassword || '')} `)
-                    headers['Authorization'] = `Basic ${credentials} `
-                }
-            }
-
-            // Determine if we need a CORS proxy
-            const targetUrl = url.toString()
-            let fetchUrl = targetUrl
-
-            // Use CORS proxy for cross-origin requests
-            // corsproxy.io supports all HTTP methods including POST with body
-            const isCrossOrigin = !targetUrl.startsWith(window.location.origin)
-            if (isCrossOrigin) {
-                fetchUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`
-            }
-
-            // Apply substitution to body as well
-            const requestBody = request.method !== 'GET' && request.body
-                ? substituteVariables(request.body)
-                : undefined
-
-            // Make request
-            const startTime = performance.now()
-            const response = await fetch(fetchUrl, {
-                method: request.method,
-                headers,
-                body: requestBody,
-            })
-            const elapsed = Math.round(performance.now() - startTime)
-
-            const data = await response.text()
-
-            // Detect CORS proxy errors (proxy returns HTML error pages for failed connections)
-            if (isCrossOrigin && !response.ok && typeof data === 'string' && data.includes('<')) {
-                // The proxy returned an HTML error page — the target server was unreachable
-                const isProxyError = data.includes('Cloudflare') ||
-                    data.includes('ENOTFOUND') ||
-                    data.includes('ECONNREFUSED') ||
-                    data.includes('error') ||
-                    response.status === 403 ||
-                    response.status === 502 ||
-                    response.status === 503
-                if (isProxyError) {
-                    throw new Error(`Could not send request — server "${url.hostname}" not found or unreachable`)
-                }
-            }
-
-            let jsonData = null
-            try {
-                jsonData = JSON.parse(data)
-            } catch (e) {
-                jsonData = data
-            }
-
-            const responseData: Response = {
-                status: response.status,
-                statusText: response.statusText,
-                headers: Object.fromEntries(response.headers.entries()),
-                body: jsonData,
-                time: elapsed,
-            }
-
-            setOpenTabs(prev => prev.map(t =>
-                findTab(t) ? { ...t, response: responseData } : t
-            ))
-
-            // Add to history
+        // Add to history (only if not an error)
+        if (!responseData.error) {
             const historyItem: HistoryItem = {
                 id: generateId(),
                 timestamp: Date.now(),
                 request: { ...request },
                 response: {
-                    status: response.status,
-                    statusText: response.statusText,
-                    time: elapsed,
+                    status: responseData.status,
+                    statusText: responseData.statusText,
+                    time: responseData.time,
                 }
             }
             setHistory(prev => [historyItem, ...prev])
-        } catch (error: any) {
-            // Normalize URL-related errors to a clear 'Invalid URL' message
-            const isUrlError = error instanceof TypeError && (
-                error.message.includes('Invalid URL') ||
-                error.message.includes('URL') ||
-                error.message.includes('URI')
-            )
-            const message = isUrlError || error.message === 'Invalid URL'
-                ? 'Invalid URL'
-                : error.message
-            setOpenTabs(prev => prev.map(t =>
-                findTab(t) ? { ...t, response: { error: true, message } } : t
-            ))
         }
+    }
+
+    // Bulk send handler
+    const sendBulkRequest = async (request: Request, concurrency: number) => {
+        const tabId = `bulk-${Date.now()}`
+        const bulkTab: Tab = {
+            id: tabId,
+            type: 'bulk',
+            title: `⚡ Bulk ${concurrency}× ${request.method} ${request.name}`,
+            bulkRequest: request,
+            bulkConcurrency: concurrency,
+            bulkResponse: null,
+        }
+        setOpenTabs(prev => [...prev, bulkTab])
+        setActiveTabId(tabId)
+
+        // Execute bulk request
+        const result = await sendBulkViaExecutor(request, concurrency, substituteVariables)
+
+        // Update tab with results
+        setOpenTabs(prev => prev.map(t =>
+            t.id === tabId ? { ...t, bulkResponse: result } : t
+        ))
     }
 
     // Open Runner with specific collection
@@ -742,7 +664,6 @@ function App() {
         if (requests.length === 0) return
 
         // 1. Initialize Results (flattened for all iterations)
-        // const totalRequests = requests.length * config.iterations
         const initialResults: RunResult[] = []
 
         for (let iter = 1; iter <= config.iterations; iter++) {
@@ -757,8 +678,6 @@ function App() {
 
         setRunResults(initialResults)
 
-        setRunResults(initialResults)
-
         // 2. Check for existing Run tab to reuse
         const existingRunTab = openTabs.find(t => t.type === 'run')
 
@@ -767,9 +686,9 @@ function App() {
         const runTab: Tab = {
             id: tabId,
             type: 'run',
-            title: `Runner: ${config.collectionName || 'Sequence'}`, // Improved title
+            title: `Runner: ${(config as any).collectionName || 'Sequence'}`,
             runResults: initialResults,
-            runCollectionName: config.collectionName || 'Runner Sequence',
+            runCollectionName: (config as any).collectionName || 'Runner Sequence',
             lastRunnerConfig: { config, requests }
         }
 
@@ -781,10 +700,8 @@ function App() {
 
         setActiveTabId(tabId)
 
-        // 3. Execution Loop
+        // 3. Execution Loop — uses the same sendViaExecutor as sendRequest
         for (let i = 0; i < initialResults.length; i++) {
-            // Check if stopped? (Not implemented, but clean)
-
             const resultItem = initialResults[i]
             const request = resultItem.request
 
@@ -793,84 +710,21 @@ function App() {
                 idx === i ? { ...r, status: 'running' as const } : r
             ))
 
-            // Update logic same as before...
-            const globalVariables = environments.find(e => e.id === currentEnvironmentId)?.variables || []
+            // Use the unified executor service
+            const response = await sendViaExecutor(request, substituteVariables)
 
-            const substituteVariables = (text: string) => {
-                return text.replace(/{{([^}]+)}}/g, (match, key) => {
-                    const variable = globalVariables.find(v => v.key === key && v.enabled)
-                    return variable ? variable.value : match
-                })
-            }
-
-            const urlWithVars = substituteVariables(request.url)
-            let finalUrl = urlWithVars
-            if (!finalUrl.startsWith('http://') && !finalUrl.startsWith('https://')) {
-                finalUrl = 'https://' + finalUrl
-            }
-
-            // Headers
-            const headers: Record<string, string> = {}
-            // Default headers logic used in sendRequest is not easily accessible here without refactor
-            // duplicating strict minimum or extracting helper? 
-            // App.tsx has getDefaultHeadersForMethod.
-            const defaults = getDefaultHeadersForMethod(request.method)
-            defaults.forEach(h => { if (h.enabled) headers[h.key] = h.value })
-
-            if (request.headers) {
-                request.headers.forEach(h => {
-                    if (h.enabled) {
-                        headers[substituteVariables(h.key)] = substituteVariables(h.value)
-                    }
-                })
-            }
-
-            // Body
-            const requestBody = request.method !== 'GET' && request.body
-                ? substituteVariables(request.body)
-                : undefined
-
-            // CORS Proxy Logic (duplicated from sendRequest - ideally refactor common logic)
-            let fetchUrl = finalUrl
-            // Check local variable
-            try {
-                const isCrossOrigin = !finalUrl.startsWith(window.location.origin)
-                if (isCrossOrigin) {
-                    fetchUrl = `https://corsproxy.io/?${encodeURIComponent(finalUrl)}`
-                }
-            } catch (e) {
-                // invalid url, let fetch fail
-            }
-
-            const startTime = performance.now()
-            let status: 'passed' | 'failed' = 'failed'
-            let responseStatus: number | undefined
-            let errorMsg: string | undefined
-
-            try {
-                const response = await fetch(fetchUrl, {
-                    method: request.method,
-                    headers,
-                    body: requestBody
-                })
-                responseStatus = response.status
-                if (response.ok) status = 'passed'
-                else status = 'failed' // or passed if we just want it to run? Postman marks 2xx as passed usually.
-            } catch (error: any) {
-                status = 'failed'
-                errorMsg = error.message
-            }
-            const endTime = performance.now()
-            const duration = Math.round(endTime - startTime)
+            const status: 'passed' | 'failed' = (!response.error && response.status && response.status >= 200 && response.status < 300)
+                ? 'passed'
+                : 'failed'
 
             // Update result
             setRunResults(prev => prev.map((r, idx) =>
                 idx === i ? {
                     ...r,
                     status,
-                    responseStatus,
-                    responseTime: duration,
-                    error: errorMsg
+                    responseStatus: response.status,
+                    responseTime: response.time,
+                    error: response.error ? response.message : undefined
                 } : r
             ))
 
@@ -1137,6 +991,31 @@ function App() {
                     }}
                     onExportCollection={exportCollection}
                     onNewBlankRequest={createStandaloneRequest}
+                    onImportAsStandalone={(requestData: Partial<Request>) => {
+                        const newRequest: Request = {
+                            id: generateId(),
+                            name: requestData.name || requestData.url?.split('/').pop() || 'Imported Request',
+                            method: requestData.method || 'GET',
+                            url: requestData.url || '',
+                            params: requestData.params || [],
+                            headers: requestData.headers || [],
+                            body: requestData.body || '',
+                            auth: requestData.auth || { type: 'none' as const },
+                        }
+                        setCurrentRequest(newRequest)
+                        setCurrentRequestId(newRequest.id)
+                        setCurrentCollectionId(null as any)
+                        const tabId = `tab-${newRequest.id}`
+                        const newTab: Tab = {
+                            id: tabId,
+                            type: 'request',
+                            title: newRequest.name,
+                            requestId: newRequest.id,
+                            request: newRequest,
+                        }
+                        setOpenTabs(prev => [...prev, newTab])
+                        setActiveTabId(tabId)
+                    }}
                     standaloneRequests={standaloneRequests}
                     onSelectStandaloneRequest={(req: Request) => {
                         setCurrentRequest(req)
@@ -1216,6 +1095,11 @@ function App() {
                                             <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
                                         </svg>
                                     )}
+                                    {tab.type === 'bulk' && (
+                                        <svg className="w-4 h-4 text-purple-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                        </svg>
+                                    )}
                                     <span className="text-sm truncate flex-1">{tab.title}</span>
                                     <button
                                         onClick={(e) => {
@@ -1258,13 +1142,180 @@ function App() {
                             </svg>
                             <p className="text-xl font-medium">Select a request or create a new one</p>
                         </div>
+                    ) : activeTabId?.startsWith('bulk-') ? (
+                        // Bulk Results View
+                        <div className="flex-1 overflow-auto p-4">
+                            {(() => {
+                                const activeTab = openTabs.find(t => t.id === activeTabId)
+                                if (!activeTab || activeTab.type !== 'bulk') return null
+
+                                const bulkRes = activeTab.bulkResponse
+
+                                // Loading state
+                                if (!bulkRes) {
+                                    return (
+                                        <div className="flex-1 flex flex-col items-center justify-center h-full min-h-[400px]">
+                                            <div className="animate-spin rounded-full h-16 w-16 border-4 border-purple-500/30 border-t-purple-500 mb-4"></div>
+                                            <p className="text-lg font-medium text-text-secondary">Sending {activeTab.bulkConcurrency} concurrent requests...</p>
+                                            <p className="text-sm text-text-tertiary mt-1">{activeTab.bulkRequest?.method} {activeTab.bulkRequest?.url}</p>
+                                        </div>
+                                    )
+                                }
+
+                                // Error state
+                                if (!bulkRes.ok && bulkRes.error) {
+                                    return (
+                                        <div className="max-w-2xl mx-auto mt-8">
+                                            <div className="bg-red-900/20 border border-red-700 rounded-lg p-6 text-center">
+                                                <svg className="w-12 h-12 text-red-400 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                                                </svg>
+                                                <p className="text-red-300 font-mono text-sm">{bulkRes.error.message}</p>
+                                            </div>
+                                        </div>
+                                    )
+                                }
+
+                                // Calculate stats
+                                const results = bulkRes.results || []
+                                const successCount = results.filter(r => r.ok).length
+                                const failCount = results.length - successCount
+                                const times = results.map(r => r.durationMs)
+                                const minTime = times.length > 0 ? Math.min(...times) : 0
+                                const maxTime = times.length > 0 ? Math.max(...times) : 0
+                                const avgTime = times.length > 0 ? Math.round(times.reduce((a, b) => a + b, 0) / times.length) : 0
+                                const totalBytes = results.reduce((a, r) => a + (r.sizeBytes || 0), 0)
+                                const throughput = bulkRes.totalTimeMs > 0
+                                    ? (results.length / (bulkRes.totalTimeMs / 1000)).toFixed(1)
+                                    : '0'
+                                const successRate = results.length > 0
+                                    ? Math.round((successCount / results.length) * 100)
+                                    : 0
+
+                                return (
+                                    <div className="max-w-5xl mx-auto">
+                                        {/* Header */}
+                                        <div className="flex items-center justify-between mb-6">
+                                            <h2 className="text-xl font-bold flex items-center gap-2">
+                                                <svg className="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                                </svg>
+                                                Bulk: {results.length}× {activeTab.bulkRequest?.method} {activeTab.bulkRequest?.name}
+                                            </h2>
+                                            {activeTab.bulkRequest && activeTab.bulkConcurrency && (
+                                                <button
+                                                    onClick={() => sendBulkRequest(activeTab.bulkRequest!, activeTab.bulkConcurrency!)}
+                                                    className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-sm rounded transition-colors flex items-center gap-1.5"
+                                                >
+                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                                    </svg>
+                                                    Run Again
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        {/* Stats Dashboard */}
+                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+                                            <div className="bg-bg-tertiary rounded-lg p-4 border border-gray-700">
+                                                <div className="text-xs text-text-tertiary uppercase font-bold tracking-wider mb-1">Success</div>
+                                                <div className="text-2xl font-bold text-green-400">{successCount}</div>
+                                                <div className="text-xs text-text-tertiary">{successRate}% rate</div>
+                                            </div>
+                                            <div className="bg-bg-tertiary rounded-lg p-4 border border-gray-700">
+                                                <div className="text-xs text-text-tertiary uppercase font-bold tracking-wider mb-1">Failed</div>
+                                                <div className="text-2xl font-bold text-red-400">{failCount}</div>
+                                                <div className="text-xs text-text-tertiary">of {results.length} total</div>
+                                            </div>
+                                            <div className="bg-bg-tertiary rounded-lg p-4 border border-gray-700">
+                                                <div className="text-xs text-text-tertiary uppercase font-bold tracking-wider mb-1">Avg Time</div>
+                                                <div className="text-2xl font-bold text-blue-400">{avgTime}<span className="text-sm ml-0.5">ms</span></div>
+                                                <div className="text-xs text-text-tertiary">{minTime}ms — {maxTime}ms</div>
+                                            </div>
+                                            <div className="bg-bg-tertiary rounded-lg p-4 border border-gray-700">
+                                                <div className="text-xs text-text-tertiary uppercase font-bold tracking-wider mb-1">Throughput</div>
+                                                <div className="text-2xl font-bold text-purple-400">{throughput}<span className="text-sm ml-0.5">req/s</span></div>
+                                                <div className="text-xs text-text-tertiary">{bulkRes.totalTimeMs}ms total</div>
+                                            </div>
+                                        </div>
+
+                                        {/* Success Rate Bar */}
+                                        <div className="mb-6">
+                                            <div className="flex justify-between text-xs text-text-tertiary mb-1">
+                                                <span>Success Rate</span>
+                                                <span>{successRate}%</span>
+                                            </div>
+                                            <div className="w-full h-3 bg-bg-tertiary rounded-full overflow-hidden">
+                                                <div
+                                                    className={`h-full rounded-full transition-all duration-500 ${successRate === 100 ? 'bg-gradient-to-r from-green-500 to-green-400' :
+                                                        successRate >= 80 ? 'bg-gradient-to-r from-green-500 to-yellow-400' :
+                                                            successRate >= 50 ? 'bg-gradient-to-r from-yellow-500 to-orange-400' :
+                                                                'bg-gradient-to-r from-red-500 to-red-400'
+                                                        }`}
+                                                    style={{ width: `${successRate}%` }}
+                                                ></div>
+                                            </div>
+                                        </div>
+
+                                        {/* Total Data */}
+                                        <div className="flex gap-4 mb-4 text-xs text-text-tertiary">
+                                            <span>Total data: {(totalBytes / 1024).toFixed(1)} KB</span>
+                                        </div>
+
+                                        {/* Results Table */}
+                                        <div className="border border-gray-700 rounded-lg overflow-hidden mb-6">
+                                            <div className="bg-bg-tertiary px-4 py-2 flex items-center gap-4 text-xs font-bold text-text-tertiary uppercase tracking-wider border-b border-gray-700">
+                                                <span className="w-12 text-center">#</span>
+                                                <span className="w-16 text-center">Status</span>
+                                                <span className="flex-1">Response</span>
+                                                <span className="w-20 text-right">Time</span>
+                                                <span className="w-20 text-right">Size</span>
+                                            </div>
+                                            <div className="max-h-[400px] overflow-y-auto">
+                                                {results.map((r, idx) => (
+                                                    <div
+                                                        key={idx}
+                                                        className={`px-4 py-2 flex items-center gap-4 text-sm border-b border-gray-700/50 last:border-0 ${r.ok ? 'hover:bg-green-900/10' : 'hover:bg-red-900/10 bg-red-900/5'
+                                                            }`}
+                                                    >
+                                                        <span className="w-12 text-center text-xs text-text-tertiary font-mono">{r.index + 1}</span>
+                                                        <span className="w-16 text-center">
+                                                            {r.ok ? (
+                                                                <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${r.status >= 200 && r.status < 300 ? 'bg-green-500/20 text-green-400' :
+                                                                    r.status >= 300 && r.status < 400 ? 'bg-blue-500/20 text-blue-400' :
+                                                                        r.status >= 400 && r.status < 500 ? 'bg-orange-500/20 text-orange-400' :
+                                                                            'bg-red-500/20 text-red-400'
+                                                                    }`}>{r.status}</span>
+                                                            ) : (
+                                                                <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-red-500/20 text-red-400">ERR</span>
+                                                            )}
+                                                        </span>
+                                                        <span className="flex-1 text-xs truncate">
+                                                            {r.ok ? (
+                                                                <span className="text-text-secondary">{r.statusText}</span>
+                                                            ) : (
+                                                                <span className="text-red-400">{r.error}</span>
+                                                            )}
+                                                        </span>
+                                                        <span className="w-20 text-right text-xs font-mono text-text-secondary">{r.durationMs}ms</span>
+                                                        <span className="w-20 text-right text-xs font-mono text-text-tertiary">{r.sizeBytes ? `${(r.sizeBytes / 1024).toFixed(1)}K` : '—'}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        {/* Charts */}
+                                        <BulkResultsCharts results={results} totalTimeMs={bulkRes.totalTimeMs} />
+                                    </div>
+                                )
+                            })()}
+                        </div>
                     ) : activeTabId?.startsWith('run-') ? (
                         // Run Results View
                         <div className="flex-1 overflow-auto p-4">
                             {(() => {
                                 const activeTab = openTabs.find(t => t.id === activeTabId)
                                 if (!activeTab || activeTab.type !== 'run') return null
-                                // Always use runResults state (updated during execution)
                                 const results = runResults
                                 return (
                                     <div className="max-w-4xl mx-auto">
@@ -1275,7 +1326,6 @@ function App() {
                                             Run: {activeTab.runCollectionName}
                                         </h2>
 
-                                        {/* Run Again Button */}
                                         {activeTab.lastRunnerConfig && (
                                             <div className="flex justify-end mb-2">
                                                 <button
@@ -1290,7 +1340,6 @@ function App() {
                                             </div>
                                         )}
 
-                                        {/* Stats */}
                                         <div className="flex gap-4 mb-4 text-sm">
                                             <div className="flex items-center gap-2">
                                                 <span className="w-3 h-3 rounded-full bg-green-500"></span>
@@ -1305,7 +1354,6 @@ function App() {
                                             </div>
                                         </div>
 
-                                        {/* Progress */}
                                         <div className="w-full h-2 bg-bg-tertiary rounded overflow-hidden mb-4">
                                             <div
                                                 className="h-full bg-gradient-to-r from-green-500 to-green-400 transition-all duration-300"
@@ -1313,7 +1361,6 @@ function App() {
                                             ></div>
                                         </div>
 
-                                        {/* Results List */}
                                         <div className="space-y-2">
                                             {results.map((result, idx) => (
                                                 <div
@@ -1324,7 +1371,6 @@ function App() {
                                                                 'border-gray-700 bg-bg-tertiary'
                                                         }`}
                                                 >
-                                                    {/* Status Icon */}
                                                     <div className="w-6 h-6 flex items-center justify-center">
                                                         {result.status === 'pending' && <div className="w-2 h-2 rounded-full bg-gray-500"></div>}
                                                         {result.status === 'running' && (
@@ -1345,7 +1391,6 @@ function App() {
                                                         )}
                                                     </div>
 
-                                                    {/* Method Badge */}
                                                     <span className={`text-xs font-bold px-2 py-0.5 rounded ${result.request.method === 'GET' ? 'bg-green-500/20 text-green-400' :
                                                         result.request.method === 'POST' ? 'bg-orange-500/20 text-orange-400' :
                                                             result.request.method === 'PUT' ? 'bg-blue-500/20 text-blue-400' :
@@ -1367,11 +1412,9 @@ function App() {
                                                             {result.responseStatus}
                                                         </span>
                                                     )}
-
                                                     {result.responseTime !== undefined && (
                                                         <span className="text-xs text-text-secondary">{result.responseTime}ms</span>
                                                     )}
-
                                                     {result.error && (
                                                         <span className="text-xs text-red-400 truncate max-w-[150px]" title={result.error}>
                                                             {result.error}
@@ -1391,6 +1434,7 @@ function App() {
                                 request={currentRequest}
                                 onSendRequest={sendRequest}
                                 onUpdateRequest={updateRequest}
+                                onBulkSend={sendBulkRequest}
                             />
 
                             <div className="border-t border-gray-700" />
